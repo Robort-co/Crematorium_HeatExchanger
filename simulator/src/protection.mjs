@@ -171,10 +171,9 @@ export class Protection {
         this.fault(sim, 'NO_CIRCULATION_CONTROL', 'Потерян контроль Q и ΔP (D-165)', 'NO_FEEDBACK');
         this.beginStop(sim, 'Потеря контроля циркуляции');
       }
-      if (this.elapsed(sim, 'lowCirculation', !sim.pumps.active && (circulation === 'BOTH_LOW' || circulation === 'DP_ONLY_LOW')) >= 5000) {
-        sim.gap('Аварийное резервирование при низкой циркуляции — следующий этап, не реализовано');
-      }
+
     }
+    sim.hydraulics.monitor(sim); // D-138/D-166: собственные непрерывные выдержки, маска на смене и сброс при изменении критерия.
     const runningCommand = sim.outputs.commands['vfd.run']; // Доставка START и физический статус проверяются раздельно.
     if (sim.state === 'STARTING' && runningCommand?.value === 'START' && runningCommand.delivery === 'ACCEPTED' &&
         sim.outputs.value('vfd.enable') === true && sim.signals.read('vfd.exchange') === true &&

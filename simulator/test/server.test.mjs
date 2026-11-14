@@ -25,6 +25,13 @@ test('HTTP: смена насосов, независимые входы и ос
     await act({ type: 'group', name: 'pump1On' }); await act({ type: 'advance', ms: 1000 });
     await act({ type: 'group', name: 'valve1Open' }); await act({ type: 'group', name: 'flowNormal' });
     await act({ type: 'advance', ms: 5000 }); await act({ type: 'command', action: 'confirm_bypass_closed' });
+    await act({ type: 'command', action: 'flow_control', value: false });
+    assert.equal(snapshot.config.flowControl, false);
+    assert.equal(snapshot.hydraulics.criterion.mode, 'DP_ONLY');
+    await act({ type: 'command', action: 'flow_control', value: 'off' });
+    assert.equal(snapshot.lastRequest.result, 'REJECTED');
+    await act({ type: 'command', action: 'flow_control', value: true });
+    assert.equal(snapshot.config.flowControl, true);
     await act({ type: 'command', action: 'switch_pump', value: 2 });
     assert.equal(snapshot.lastRequest.result, 'ACCEPTED');
     assert.equal(snapshot.outputs['pump2.run'].value, true);

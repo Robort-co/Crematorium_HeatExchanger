@@ -45,16 +45,21 @@ function feedback(name) { // name — функция выхода; резуль�
 function render() {
   const group = snapshot.pumpGroup; // Состояние группы отдельно от отдельных выходов и входов.
   const operation = group.active; // Уже принятая смена, не новый запрос при каждом обновлении HMI.
+  element('flow-control').checked = snapshot.config.flowControl;
+  element('flow-control').disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || snapshot.state === null;
+  element('hydraulic-criterion').textContent = 'Критерий: ' + snapshot.hydraulics.criterion.mode + ' · ' + snapshot.hydraulics.criterion.state + (snapshot.hydraulics.requireFullStartup ? ' · Следующий успешный пуск обязательно проверяет Q и ΔP' : '');
+  element('hydraulic-warning').hidden = !snapshot.hydraulics.warning;
+  element('hydraulic-warning').textContent = snapshot.hydraulics.warning ?? '';
   element('pump-state').textContent = 'Выбран насос ' + snapshot.selectedPump + (operation ? ' · Смена ' + operation.from + ' → ' + operation.to + ' · ' + operation.stage : '') + (group.groupFault ? ' · Критическая неисправность группы; запрошена внешняя циркуляция' : '');
   element('pump-branches').innerHTML = [1, 2].map(pump => { // pump — номер отображаемой ветви.
     const branch = group.branches[pump]; // Ошибки, блокировки и ручное положение не смешиваются с DI.
-    return '<div class="mechanism"><b>Насос ' + pump + '</b>Команда: ' + escaped(snapshot.outputs['pump' + pump + '.run']?.value) + '<br>Фазы: ' + escaped(feedback('pump' + pump + '.run')) + '<br>Исключение: ' + escaped(branch.faults.join(', ') || 'нет') + '<br>Движение привода заблокировано: ' + text(branch.valveBlocked || (branch.electricalIsolation && !branch.isolationConfirmed)) + '<br>Закрытие подтверждено вручную: ' + text(branch.manualClosed) + '</div>';
+    return '<div class="mechanism"><b>Насос ' + pump + '</b>Команда: ' + escaped(snapshot.outputs['pump' + pump + '.run']?.value) + '<br>Фазы: ' + escaped(feedback('pump' + pump + '.run')) + '<br>Исключение: ' + escaped([...branch.faults, ...branch.exclusions].join(', ') || 'нет') + '<br>Движение привода заблокировано: ' + text(branch.valveBlocked || (branch.electricalIsolation && !branch.isolationConfirmed)) + '<br>Закрытие подтверждено вручную: ' + text(branch.manualClosed) + '</div>';
   }).join('');
   const waiting = operation?.manualRequestedAt !== null && operation?.manualRequestedAt !== undefined; // Непрерывный отсчёт хранится сервером, не браузером.
   element('pump-wait').hidden = !waiting;
   element('pump-wait').textContent = waiting ? 'Затвор ' + operation.from + ': движение снято. Отключить автомат привода, закрыть вручную и проверить. До обязательного останова: ' + Math.max(0, (60000 - snapshot.time + operation.manualRequestedAt) / 1000).toFixed(1) + ' с.' : '';
   for (const pump of [1, 2]) { // pump — команды строго одной ветви.
-    element('switch-pump-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || snapshot.state !== 'RUNNING' || snapshot.pumpSwitchReasons[pump].length > 0;
+    element('switch-pump-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || !(snapshot.state === 'RUNNING' || (snapshot.state === 'STARTING' && snapshot.stage === 'CIRCULATION')) || snapshot.pumpSwitchReasons[pump].length > 0;
     element('switch-pump-' + pump).title = snapshot.pumpSwitchReasons[pump].join('; ');
     element('confirm-valve-' + pump).hidden = !waiting || operation.from !== pump;
     element('confirm-valve-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
@@ -131,6 +136,7 @@ for (const pump of [1, 2]) { // pump — номер насоса из отдел
   element('confirm-valve-' + pump).onclick = () => act({ type: 'command', action: 'confirm_valve_closed', value: pump });
   element('confirm-breaker-' + pump).onclick = () => act({ type: 'command', action: 'confirm_pump_breaker_off', value: pump });
 }
+element('flow-control').onchange = () => act({ type: 'command', action: 'flow_control', value: element('flow-control').checked });
 element('fixture').onclick = () => act({ type: 'fixture' });
 element('restart').onclick = () => act({ type: 'restart' });
 element('start').onclick = () => act({ type: 'command', action: 'start' });

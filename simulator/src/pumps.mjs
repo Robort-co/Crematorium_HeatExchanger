@@ -10,6 +10,7 @@ export class PumpGroup {
   emergencyCirculationRequested = false; // Условный исходящий статус котельной, не команда её насосу.
   branch() {
     return {
+      exclusions: [], // Требуется инженерная проверка, без утверждения физической неисправности D-167.
       faults: [], // Индивидуальные причины исключения; не общие ошибки датчиков/связи.
       inhibited: false, // Запрет ON после электрического отключения, ещё до окончания классификации.
       classificationAt: null, // Начало дополнительных 2 с после снятия ON, D-142.
@@ -31,7 +32,7 @@ export class PumpGroup {
     if (![1, 2].includes(target)) return ['Номер насоса должен быть 1 или 2'];
     if (this.active) reasons.push('Смена уже выполняется');
     if (target === sim.selectedPump) reasons.push('Этот насос уже выбран');
-    if (this.branches[target].faults.length || this.branches[target].inhibited) reasons.push('Резерв исключён или заблокирован');
+    if (this.branches[target].faults.length || this.branches[target].exclusions.length || this.branches[target].inhibited) reasons.push('Резерв исключён или заблокирован');
     if (sim.outputs.value('pump' + target + '.run') !== false || !sim.signals.phases(target)?.every(value => !value)) reasons.push('Не подтверждён OFF и отсутствие напряжения резерва');
     if (sim.signals.position('valve' + target) !== 'CLOSED') reasons.push('Затвор резерва достоверно не закрыт');
     if (sim.signals.read('grid.normal') !== true) reasons.push('Не подтверждена исправная сеть');
@@ -48,7 +49,7 @@ export class PumpGroup {
     sim.procedureId += 1;
     this.active = { from: sim.selectedPump, to: target, cause, stage: 'START_RESERVE',
       startedAt: sim.clock.now, onAt: null, closeAt: null, openedAt: null,
-      manualRequestedAt: null, oldOff: false, circulationConfirmed: false }; // Отдельные таймеры от итоговых команд/обратной связи.
+      manualRequestedAt: null, oldOff: false, circulationConfirmed: false, verificationFailed: false }; // Отдельные таймеры от итоговых команд/обратной связи.
     sim.main.preparationDone = false;
     sim.log('PUMP_SWITCH', 'Смена ' + sim.selectedPump + ' → ' + target + ': ' + cause);
     return [];
@@ -136,7 +137,7 @@ export class PumpGroup {
   }
   step(sim, request) { // Формирование запросов уже принятой смены; защита остаётся единственным отправителем.
     const operation = this.active; // Смена не отменяется повторным нажатием и не запускается заново после отказа.
-    if (!operation || this.groupFault || sim.state === 'STOPPED') return;
+    if (!operation || this.groupFault || sim.coverageGap || sim.state === 'STOPPED') return;
     if (sim.state === 'STOPPING' && ['CLOSE_PUMP', 'FINAL_OUTPUTS', 'COMPLETE'].includes(sim.protection.stopStage)) return;
     if ([operation.from, operation.to].some(pump => sim.signals.position('valve' + pump) === 'CONTRADICTORY')) {
       sim.gap('Противоречие 1/1 при смене: полные последовательности D-168/D-176 ещё не реализованы');
@@ -183,12 +184,13 @@ export class PumpGroup {
         request['valve' + operation.to + '.direction'] = 'STOP';
       } else operation.openedAt = null;
       if (operation.openedAt !== null && sim.clock.now - operation.openedAt >= 5000) {
-        operation.circulationConfirmed = sim.circulation() === 'NORMAL' && sim.signals.phases(operation.to)?.every(Boolean) === true;
-        if (!operation.circulationConfirmed) sim.gap('После смены нет подтверждения Q/ΔP и фаз резерва: расширенная гидравлическая диагностика/ожидание D-031/D-138/D-166 не реализованы');
+        operation.circulationConfirmed = sim.hydraulics.verifySwitch(sim, operation) && sim.signals.phases(operation.to)?.every(Boolean) === true;
+        if (operation.verificationFailed) operation.stage = 'FAILED_CIRCULATION';
       }
     }
     this.checkGroup(sim);
     if (operation.oldOff && operation.circulationConfirmed && !this.groupFault) {
+      sim.hydraulics.complete(sim, operation);
       sim.selectedPump = operation.to;
       this.history = { ...operation, stage: sim.state === 'STOPPING' ? 'COMPLETED_DURING_STOP' : 'COMPLETE' };
       this.active = null;

@@ -6,6 +6,7 @@ import { FrequencyPolicy } from './frequency.mjs';
 import { Supervision } from './supervision.mjs';
 import { ArangaExchange } from './aranga.mjs';
 import { PumpGroup } from './pumps.mjs';
+import { HydraulicControl } from './hydraulics.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -44,12 +45,13 @@ export class Simulation {
     this.stopReason = null; // Причина уже принятого обязательного останова.
     this.procedureId = 0; // Контекст текущего пуска/останова; старое подтверждение не переносится в новый цикл.
     this.mode = 'MANUAL'; // D-291: если сквозной режим не выбран — ручной.
-    this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null }; // D-269: 38 Гц только для прерванного сквозного запуска; не рабочей потери связи D-330.
+    this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null, flowControl: true, flowMin: 5, dpMin: 0.3 }; // D-269: 38 Гц только для прерванного сквозного запуска; flowControl — D-032/D-045, flowMin в м³/ч и dpMin в бар — исходные D-012.
     this.manualFrequency = 25; // D-296: сохранённое ручное задание не заменяется пусковым Fmin.
     this.selectedPump = 1; // Начальный выбор тестового профиля; после успешной смены изменяется.
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
+    this.hydraulics = new HydraulicControl(); // Матрица пусковых/рабочих критериев без подстановки отсутствующих Q/ΔP.
     this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
@@ -103,9 +105,13 @@ export class Simulation {
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
     const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
     const savedManualFrequency = this.manualFrequency; // D-267/D-291: перезапуск не заменяет известное ручное задание умолчанием.
+    const savedFlowControl = this.config.flowControl; // Действующий флаг в памяти процесса, не сброс к ON при перезапуске.
+    const savedFullStartup = this.hydraulics.requireFullStartup; // D-167: требование полной проверки не теряется в демонстрации reboot.
     const savedBranches = structuredClone(this.pumps.branches); // Только память текущего процесса, не реальное NV.
     const savedGroupFault = this.pumps.groupFault; // Перезапуск не снимает критическую неисправность группы.
     this.resetRuntime();
+    this.config.flowControl = savedFlowControl;
+    this.hydraulics.requireFullStartup = savedFullStartup;
     this.pumps.branches = savedBranches;
     this.pumps.groupFault = savedGroupFault;
     for (const branch of Object.values(this.pumps.branches)) { // branch — сохраняемые ошибки; временные подтверждения отменяются.
@@ -124,10 +130,10 @@ export class Simulation {
     const after = this.signals.read('pressure.after'); // Достоверное выходное давление.
     const flow = this.signals.read('flow'); // Пригодное Q, включая только разрешённое удержание.
     if (before === null || after === null) return 'UNKNOWN';
-    const dp = after - before; // Общий перепад обеих ветвей, бар.
-    if (flow === null) return dp >= 0.3 ? 'DP_ONLY_NORMAL' : 'DP_ONLY_LOW';
-    if (dp >= 0.3 && flow >= 5) return 'NORMAL';
-    return dp < 0.3 && flow < 5 ? 'BOTH_LOW' : 'DISAGREEMENT';
+    const dp = this.hydraulics.values(this).dp; // Общий перепад обеих ветвей, бар, без артефакта двоичного вычитания на пороге.
+    if (!this.config.flowControl || flow === null) return dp >= this.config.dpMin ? 'DP_ONLY_NORMAL' : 'DP_ONLY_LOW';
+    if (dp >= this.config.dpMin && flow >= this.config.flowMin) return 'NORMAL';
+    return dp < this.config.dpMin && flow < this.config.flowMin ? 'BOTH_LOW' : 'DISAGREEMENT';
   }
   stoppedConfirmed() {
     const stop = this.outputs.commands['vfd.run']; // Нужна принятая запись STOP, а не только низкая частота.
@@ -151,6 +157,7 @@ export class Simulation {
       if (pressure === null || pressure < 0.8 || pressure > 2.8) reasons.push('Давление не разрешает пуск: ' + name);
     }
     if (this.protection.faults.length || this.protection.stBlocked) reasons.push('Сохраняются неисправности/блокировки');
+    if (Object.values(this.pumps.branches).some(branch => branch.exclusions.length)) reasons.push('Не возвращена исключённая для проверки насосная ветвь (D-167)');
     if (this.coverageGap) reasons.push('Модель на паузе вне реализованной области');
     if (source === 'HMI' && this.mode !== 'MANUAL') reasons.push('Сквозной режим: новый Пуск только от ARANGA');
     if (source === 'ARANGA' && this.mode !== 'ARANGA') reasons.push('Ручной режим');
@@ -192,7 +199,7 @@ export class Simulation {
       record.reasons = this.startReasons();
       if (!record.reasons.length) { this.beginStart('HMI'); record.result = 'ACCEPTED'; }
     } else if (action === 'switch_pump') {
-      record.reasons = this.state === 'RUNNING' ? this.pumps.begin(this, value) : ['Ручная смена этого профиля доступна только в работе'];
+      record.reasons = this.state === 'RUNNING' || (this.state === 'STARTING' && this.main.stage === 'CIRCULATION') ? this.pumps.begin(this, value) : ['Ручная смена доступна в работе или при гидравлической проверке подготовки (D-031)'];
       if (!record.reasons.length) record.result = 'ACCEPTED';
     } else if (action === 'confirm_valve_closed') {
       record.reasons = this.pumps.confirmClosed(this, value);
@@ -200,6 +207,14 @@ export class Simulation {
     } else if (action === 'confirm_pump_breaker_off') {
       record.reasons = this.pumps.confirmIsolation(this, value);
       if (!record.reasons.length) record.result = 'ACCEPTED';
+    } else if (action === 'flow_control' && typeof value === 'boolean' && this.state !== null) {
+      if (value === this.config.flowControl) record.result = 'NO_CHANGE'; // Повтор прежнего значения не продлевает диагностическую выдержку.
+      else {
+        this.config.flowControl = value;
+        this.hydraulics.resetTimers(this);
+        record.result = 'ACCEPTED';
+        this.log('SIM_ENGINEER_SETTING', 'Флаг расхода: ' + value + '. Права инженера здесь имитируются, производственной авторизации нет (D-045)');
+      }
     } else if (action === 'mode') {
       this.changeMode(value, record);
     } else if (action === 'stop') {
@@ -273,8 +288,9 @@ export class Simulation {
       startReasons: this.startReasons(), remoteStartReasons: this.startReasons('ARANGA'), telemetry: this.telemetry(), signals: this.signals.values, definitions: DEFINITIONS,
       requests: this.outputs.requests, outputs: this.outputs.commands,
       positions: { st: this.signals.position('st'), valve1: this.signals.position('valve1'), valve2: this.signals.position('valve2') },
-      flow: this.signals.flow(), dp: before !== null && after !== null ? after - before : null,
+      flow: this.signals.flow(), dp: before !== null && after !== null ? this.hydraulics.values(this).dp : null,
       circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
+      hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
       selectedPump: this.selectedPump, pumpGroup: this.pumps, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
@@ -287,6 +303,7 @@ export class Simulation {
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },
+      hydraulicWarning: this.hydraulics.warning, flowControl: this.config.flowControl, requireFullHydraulicStartup: this.hydraulics.requireFullStartup,
       pumpGroup: { selected: this.selectedPump, switching: this.pumps.active, branches: this.pumps.branches, emergencyCirculationRequested: this.pumps.emergencyCirculationRequested },
       arangaWarning: this.mode === 'ARANGA' && this.state === 'RUNNING' && !this.aranga.available(this), hmiWarning: !this.hmiAvailable() };
   }

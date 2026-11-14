@@ -2,7 +2,7 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.3 · насосная группа</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.4 · гидравлическая диагностика</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
@@ -27,6 +27,9 @@
 </div>
 <section class="panel">
   <h2>Насосная группа · смена и резерв</h2>
+  <label><input id="flow-control" type="checkbox" checked> Учитывать расход в структуре безопасности · инженерная настройка имитатора</label>
+  <p id="hydraulic-criterion" class="hint"></p><p id="hydraulic-warning" class="warning" role="status" hidden></p>
+  <p class="hint">Инженерные права здесь условные, производственной авторизации нет. При OFF измерение Q продолжается. Принятая смена по низкому Q всё равно проверяет расход результата.</p>
   <p id="pump-state" role="status"></p><div id="pump-branches" class="mechanisms"></div>
   <div class="buttons"><button id="switch-pump-1">Перейти на насос 1</button><button id="switch-pump-2">Перейти на насос 2</button></div>
   <p id="pump-wait" class="warning" role="status" hidden></p>

@@ -57,14 +57,14 @@ export class MainProgram {
         } else this.openedAt = null;
         if (this.openedAt !== null && sim.clock.now - this.openedAt >= 5000) {
           // D-031: это момент пусковой проверки, а не ещё одна выдержка низкого расхода.
-          const circulation = sim.circulation(); // Отдельная достоверность Q и ΔP.
           const phases = sim.signals.phases(pump); // Напряжение не выводится из команды ON.
           const vfdStart = sim.outputs.commands['vfd.run']; // Подтверждение записи START отдельно от бита Работа.
           const running = sim.signals.get('vfd.running'); // Свежая обратная связь после принятой записи.
           const vfdConfirmed = vfdStart?.value === 'START' && vfdStart.delivery === 'ACCEPTED' && // Принятая запись START и новый достоверный ответ Работа — разные доказательства.
             sim.signals.read('vfd.running') === true && running.lastGoodRevision > vfdStart.deliveryInputRevision;
-          this.preparationDone = circulation === 'NORMAL' && phases?.every(Boolean) && vfdConfirmed;
+          this.preparationDone = sim.hydraulics.startReady(sim) && phases?.every(Boolean) && vfdConfirmed;
           if (this.preparationDone && this.bypassClosed) {
+            sim.hydraulics.requireFullStartup = false; // D-167: снять только после полного успешного пуска, не после сброса/изменения флага.
             sim.transition('RUNNING', 'Подготовка завершена и ШБ закрыт подтверждён оператором (D-030)');
             this.stage = 'COMPLETE';
           }
