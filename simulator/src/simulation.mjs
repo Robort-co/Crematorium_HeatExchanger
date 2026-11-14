@@ -4,6 +4,7 @@ import { MainProgram } from './main-program.mjs';
 import { Protection } from './protection.mjs';
 import { FrequencyPolicy } from './frequency.mjs';
 import { Supervision } from './supervision.mjs';
+import { ArangaExchange } from './aranga.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -38,7 +39,7 @@ export class Simulation {
     this.stopReason = null; // Причина уже принятого обязательного останова.
     this.procedureId = 0; // Контекст текущего пуска/останова; старое подтверждение не переносится в новый цикл.
     this.mode = 'MANUAL'; // D-291: если сквозной режим не выбран — ручной.
-    this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, resonance: null }; // Исходные частоты; null-зона применима только к тестовому профилю.
+    this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null }; // D-269: 38 Гц только для прерванного сквозного запуска; не рабочей потери связи D-330.
     this.manualFrequency = 25; // D-296: сохранённое ручное задание не заменяется пусковым Fmin.
     this.selectedPump = 1; // Ветка 1 — ограничение первого тестового профиля, не автоматическая смена.
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
@@ -46,11 +47,11 @@ export class Simulation {
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
+    this.aranga = new ArangaExchange(); // Прикладные операции имитатора печи; реального Modbus нет.
     this.frequency = new FrequencyPolicy(this.config); // LIMIT/резонанс без команд запуска.
     this.request = {}; // Последний запрос основной программы и защитной последовательности.
     this.exchange = { hmi: true, aranga: false }; // Генераторы успешных операций: только синтетические источники.
     this.lastHmiAt = null; // Последняя успешная операция управляющего HMI, не работа веб-сервера.
-    this.lastArangaAt = null; // Обмен ARANGA не влияет на ручной сценарий, D-328.
     this.mainEnabled = true; // Отключение моделирует отсутствие завершённых циклов основной программы.
     this.supervisionEnabled = true; // Отдельное отключение модели надзора.
     this.coverageGap = null; // Пауза только симулятора при выходе за реализованную область.
@@ -94,9 +95,13 @@ export class Simulation {
   restart() {
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
+    const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
+    const savedManualFrequency = this.manualFrequency; // D-267/D-291: перезапуск не заменяет известное ручное задание умолчанием.
     this.resetRuntime();
     this.protection.faults = savedFaults;
     this.protection.stBlocked = savedStBlock;
+    this.mode = savedMode;
+    this.manualFrequency = savedManualFrequency;
     this.log('RESTART', 'Достоверного восстановления нет: состояние и выходы неизвестны. Реальная NV-процедура не реализована');
     this.tick();
   }
@@ -118,7 +123,7 @@ export class Simulation {
       stop?.value === 'STOP' && stop.delivery === 'ACCEPTED' && this.signals.read('vfd.running') === false &&
       this.signals.get('vfd.running').lastGoodRevision > stop.deliveryInputRevision;
   }
-  startReasons() {
+  startReasons(source = 'HMI') { // source — источник нового Пуска; готовность для HMI и ARANGA различается.
     const reasons = []; // Все выявленные причины запрета, без очереди отложенного Пуска.
     if (this.state !== 'STOPPED' || !this.stateKnown) reasons.push('Нет подтверждённого программного состояния Остановлен');
     if (!this.stoppedConfirmed()) reasons.push('Не подтверждены останов ПЧ и отсутствие напряжения насосов');
@@ -134,7 +139,35 @@ export class Simulation {
     }
     if (this.protection.faults.length || this.protection.stBlocked) reasons.push('Сохраняются неисправности/блокировки');
     if (this.coverageGap) reasons.push('Модель на паузе вне реализованной области');
+    if (source === 'HMI' && this.mode !== 'MANUAL') reasons.push('Сквозной режим: новый Пуск только от ARANGA');
+    if (source === 'ARANGA' && this.mode !== 'ARANGA') reasons.push('Ручной режим');
+    if (source === 'ARANGA' && !this.aranga.available(this)) reasons.push('Нет успешного обмена ARANGA');
+    if (this.aranga.stopLevel === true) reasons.push('Принята команда Стоп ARANGA=1; требуется её снятие (D-299)');
     return reasons;
+  }
+  beginStart(source) { // source — уже проверенный источник команды; подготовка механизмов общая.
+    this.procedureId += 1;
+    this.aranga.beginStartup(this);
+    this.main.start();
+    this.transition('STARTING', 'Новый Пуск ' + source);
+  }
+  changeMode(value, record) { // value — выбранный режим; record — результат операторского запроса.
+    if (!['MANUAL', 'ARANGA'].includes(value)) record.reasons.push('Неизвестный режим');
+    else if (this.state === 'STARTING') record.reasons.push('Выполняется запуск ТО: режим фиксирован (D-297)');
+    else if (this.state === 'STOPPING' || this.state === null) record.reasons.push('В этой версии выбор режима доступен после останова либо ARANGA → ручной в работе');
+    else if (value === this.mode) record.result = 'NO_CHANGE';
+    else if (this.state === 'RUNNING' && value === 'ARANGA') record.reasons.push('Сначала завершите останов (D-329)');
+    else {
+      if (this.state === 'RUNNING') this.manualFrequency = this.outputs.value('vfd.frequency'); // D-267: именно итоговое задание, не обратная связь частоты.
+      this.mode = value;
+      record.result = 'ACCEPTED';
+      this.log('MODE', 'Выбран режим ' + value + '; выбор не является Пуском');
+    }
+  }
+  arangaOperation(operation, payload = {}) { // Условное сетевое событие поступает отдельно от команды механизму.
+    const result = this.aranga.receive(this, operation, payload); // Приём/отклонение в текущем режиме.
+    this.tick();
+    return result;
   }
   command(action, value, procedureId = this.procedureId) { // action/value — запрос; procedureId — процедура, показанная клиенту при нажатии.
     const record = { id: ++this.commandSequence, action, value, at: this.clock.now, result: 'REJECTED', reasons: [] }; // Результат приёма не означает исполнение.
@@ -144,7 +177,9 @@ export class Simulation {
     else if (!this.hmiAvailable()) record.reasons.push('Нет доступной HMI');
     else if (action === 'start') {
       record.reasons = this.startReasons();
-      if (!record.reasons.length) { this.procedureId += 1; this.main.start(); this.transition('STARTING', 'Новый ручной Пуск HMI'); record.result = 'ACCEPTED'; }
+      if (!record.reasons.length) { this.beginStart('HMI'); record.result = 'ACCEPTED'; }
+    } else if (action === 'mode') {
+      this.changeMode(value, record);
     } else if (action === 'stop') {
       record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
     } else if (action === 'confirm_bypass_closed' && this.state === 'STARTING' && this.main.stage !== 'OPEN_ST') {
@@ -157,8 +192,9 @@ export class Simulation {
       this.protection.manualStClosed = true;
       record.result = 'ACCEPTED';
     } else if (action === 'frequency' && Number.isFinite(value) && this.state === 'RUNNING') {
-      this.manualFrequency = value;
-      record.result = 'ACCEPTED';
+      if (this.mode === 'MANUAL') { this.manualFrequency = value; record.result = 'ACCEPTED'; }
+      else if (this.aranga.localFrequency(this, value)) record.result = 'ACCEPTED';
+      else record.reasons.push('Сквозное задание управляется ARANGA; местная корректировка доступна при удержании (D-330)');
     } else record.reasons.push('Команда не допускается в текущем состоянии/первой версии');
     this.log('REQUEST', action + ': ' + record.result, { requestId: record.id, reasons: record.reasons });
     this.tick();
@@ -167,7 +203,9 @@ export class Simulation {
   tick() {
     if (this.coverageGap) return;
     if (this.exchange.hmi) this.lastHmiAt = this.clock.now;
-    if (this.exchange.aranga) this.lastArangaAt = this.clock.now;
+    this.aranga.poll(this);
+    // Только явно включённый генератор успешных чтений; частоту и команды он не воспроизводит.
+    if (this.exchange.aranga && (this.aranga.lastSuccessAt === null || this.clock.now - this.aranga.lastSuccessAt >= 500)) this.aranga.receive(this, 'read');
     if (this.state !== null) {
       if (this.signals.read('grid.normal') !== true || this.signals.read('temperature.normal') !== true ||
           this.signals.read('cooling.required') !== false || this.signals.read('vfd.fault') !== false ||
@@ -175,6 +213,7 @@ export class Simulation {
         this.gap('Полные реакции сети, температур, охлаждения или аварии/обмена ПЧ ещё не реализованы; выдача модели приостановлена');
         return;
       }
+      this.protection.checkCommunication(this); // На границе таймаута нельзя сначала объявить успешный запуск.
       if (this.mainEnabled && this.state !== 'STOPPING') this.request = this.main.step(this);
       else if (this.mainEnabled) this.main.lastCycleAt = this.clock.now;
       if (this.supervisionEnabled) this.supervision.step(this);
@@ -206,14 +245,24 @@ export class Simulation {
     return { time: this.clock.now, generation: this.generation, procedureId: this.procedureId, state: this.state, stateKnown: this.stateKnown,
       stoppedConfirmed: this.stoppedConfirmed(), stage: this.state === 'STOPPING' ? this.protection.stopStage : this.main.stage,
       stopReason: this.stopReason, mode: this.mode, config: this.config, manualFrequency: this.manualFrequency,
-      hmiAvailable: this.hmiAvailable(), arangaAvailable: this.lastArangaAt !== null && this.clock.now - this.lastArangaAt < 5000,
+      hmiAvailable: this.hmiAvailable(), arangaAvailable: this.aranga.available(this), aranga: this.aranga.snapshot(this),
       exchange: this.exchange, mainEnabled: this.mainEnabled, supervisionEnabled: this.supervisionEnabled,
-      startReasons: this.startReasons(), signals: this.signals.values, definitions: DEFINITIONS,
+      startReasons: this.startReasons(), remoteStartReasons: this.startReasons('ARANGA'), telemetry: this.telemetry(), signals: this.signals.values, definitions: DEFINITIONS,
       requests: this.outputs.requests, outputs: this.outputs.commands,
       positions: { st: this.signals.position('st'), valve1: this.signals.position('valve1'), valve2: this.signals.position('valve2') },
       flow: this.signals.flow(), dp: before !== null && after !== null ? after - before : null,
       circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
+  }
+  telemetry() {
+    const actual = this.signals.get('vfd.frequency'); // Обратная связь ПЧ с самостоятельными качеством и временем.
+    const reasons = this.startReasons('ARANGA'); // Готовность именно к дистанционному Пуску, D-301/D-303.
+    return { state: this.state, stateKnown: this.stateKnown, mode: this.mode, ready: reasons.length === 0,
+      notReadyReasons: reasons, alarm: this.protection.faults.length > 0, errors: this.protection.faults,
+      frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
+      frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
+      frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },
+      arangaWarning: this.mode === 'ARANGA' && this.state === 'RUNNING' && !this.aranga.available(this), hmiWarning: !this.hmiAvailable() };
   }
 }

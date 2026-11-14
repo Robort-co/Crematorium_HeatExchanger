@@ -28,6 +28,7 @@ export function createSimulatorServer() {
         if (data.type === 'fixture') sim.loadFixture();
         else if (data.type === 'restart') sim.restart();
         else if (data.type === 'advance') sim.advance(data.ms);
+        else if (data.type === 'aranga') sim.arangaOperation(data.operation, data.payload);
         else if (data.type === 'command') {
           if (!Number.isInteger(data.procedureId)) throw new Error('Не указан контекст процедуры');
           sim.command(data.action, data.value, data.procedureId);

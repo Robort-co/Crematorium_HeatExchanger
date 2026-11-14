@@ -9,6 +9,10 @@ export class Protection {
   stBlocked = false; // Блокировка питания ШТ; обратная связь сама её не снимает.
   pumpCloseAt = null; // Начало заключительного закрытия рабочего затвора, D-169.
   lastCycleAt = null; // Время полностью завершённого цикла защитной части.
+  startupLinkStop = false; // Останов начался из-за потери ARANGA при запуске; D-330 к нему неприменим.
+  startupHmiStop = false; // D-273/D-287: обнаруженная потеря HMI сохраняет приоритет охлаждения до закрытия ШТ.
+  stopFrequencyRevision = 0; // Новая запись после прерывания запуска отдельно от прежнего регистра.
+  frequencySource = 'STOP_COOLING'; // Источник частоты процедуры останова для HMI/экспорта.
 
   elapsed(sim, name, active) { // sim — часы; name — таймер; active — достоверно выполненное условие.
     if (!active) { this.timers.delete(name); return 0; }
@@ -20,7 +24,7 @@ export class Protection {
     this.faults.push({ code, text, evidence, at: sim.clock.now });
     sim.log('FAULT', text, { code, evidence });
   }
-  beginStop(sim, reason) { // reason — принятая команда/защита; повтор не сбрасывает процедуру.
+  beginStop(sim, reason, kind = 'NORMAL') { // reason/kind — принятая причина; повтор не сбрасывает процедуру и её частотный приоритет.
     if (sim.state === null || sim.state === 'STOPPED' || sim.state === 'STOPPING') return false;
     sim.procedureId += 1;
     sim.transition('STOPPING', reason);
@@ -28,13 +32,37 @@ export class Protection {
     this.bypassOpen = false;
     this.manualStClosed = false;
     this.pumpCloseAt = null;
+    this.startupLinkStop = kind === 'STARTUP_ARANGA';
+    this.startupHmiStop = kind === 'STARTUP_HMI';
+    this.stopFrequencyRevision = sim.aranga.frequencyRevision;
     sim.stopReason = reason;
     sim.log('PROMPT', 'Откройте ШБ и подтвердите. Принятый останов не отменяется (D-263/D-264)');
     return true;
   }
+  checkCommunication(sim) {
+    if (sim.state === 'STARTING') {
+      // HMI проверяется до перехода В работе; при двух причинах сразу действует D-287.
+      if (!sim.hmiAvailable()) this.beginStop(sim, 'Потеря HMI при запуске (D-273)', 'STARTUP_HMI');
+      else if (sim.mode === 'ARANGA' && !sim.aranga.available(sim)) this.beginStop(sim, 'Потеря обмена ARANGA при запуске (D-259/D-294)', 'STARTUP_ARANGA');
+    }
+    if (sim.state === 'STOPPING' && (this.startupLinkStop || this.startupHmiStop) && !sim.hmiAvailable()) {
+      if (!this.startupHmiStop) sim.log('PRIORITY', 'Добавилась потеря HMI: частота охлаждения до закрытия ШТ независимо от восстановления (D-287)');
+      this.startupHmiStop = true;
+    }
+  }
   stopRequests(sim, request) { // request — копия последних запросов, изменяемая только защитной последовательностью.
     const pump = sim.selectedPump; // В этой версии одна заранее выбранная рабочая ветвь.
-    if (sim.outputs.value('vfd.run') === 'START') request['vfd.frequency'] = sim.frequency.apply(sim.config.coolingFrequency);
+    if (sim.outputs.value('vfd.run') === 'START') {
+      let frequency = sim.config.coolingFrequency; // Обычный командный останов и D-273/D-287: местная частота охлаждения.
+      this.frequencySource = 'STOP_COOLING';
+      if (this.startupLinkStop && !this.startupHmiStop) {
+        // Только D-260: новая достоверная запись до закрытия ШТ может вернуть частоту, но не отменить останов.
+        const freshWrite = sim.aranga.available(sim) && sim.aranga.frequencyRevision > this.stopFrequencyRevision; // Факт чтения не создаёт отсутствовавшее после запуска задание.
+        frequency = freshWrite ? sim.aranga.frequencyValue : sim.config.startupLinkLossFrequency;
+        this.frequencySource = freshWrite ? 'STOP_ARANGA' : 'STARTUP_LINK_FALLBACK';
+      }
+      request['vfd.frequency'] = sim.frequency.apply(frequency);
+    }
     if (this.stopStage === 'WAIT_BYPASS' && this.bypassOpen) this.stopStage = 'CLOSE_ST';
     if (this.stopStage === 'CLOSE_ST') {
       request['st.direction'] = this.stBlocked ? 'STOP' : 'CLOSE';
@@ -126,7 +154,7 @@ export class Protection {
         }
       }
     }
-    if (sim.state === 'STARTING' && !sim.hmiAvailable()) this.beginStop(sim, 'Потеря HMI при запуске (D-273)');
+    this.checkCommunication(sim);
     // Наличие ARANGA в ручном режиме сюда намеренно не входит (D-328).
     if (sim.state === 'RUNNING' && (sim.supervision.mainStale || sim.supervision.lastCycleAt === null || sim.clock.now - sim.supervision.lastCycleAt >= 2000)) {
       this.fault(sim, 'CONTROL_STALLED', 'Нет завершённых циклов основной программы или надзора за 2 с (D-312/D-325)');

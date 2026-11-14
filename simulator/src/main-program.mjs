@@ -27,7 +27,7 @@ export class MainProgram {
       if (this.stage !== 'OPEN_ST') {
         request['vfd.enable'] = true;
         request['vfd.run'] = 'START';
-        request['vfd.frequency'] = sim.config.fmin;
+        request['vfd.frequency'] = sim.frequency.apply(sim.config.fmin);
       }
       if (this.stage === 'CLOSE_VALVES') {
         request['valve1.direction'] = 'CLOSE';
@@ -75,7 +75,7 @@ export class MainProgram {
       request['pump' + pump + '.run'] = true;
       request['vfd.enable'] = true;
       request['vfd.run'] = 'START';
-      request['vfd.frequency'] = sim.frequency.apply(sim.manualFrequency);
+      request['vfd.frequency'] = sim.frequency.apply(sim.mode === 'MANUAL' ? sim.manualFrequency : sim.aranga.activeFrequency);
     }
     this.lastCycleAt = sim.clock.now;
     return request;

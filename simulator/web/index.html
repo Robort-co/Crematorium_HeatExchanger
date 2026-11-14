@@ -2,18 +2,43 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.1</span></h1><p>Ручной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.2 · локальная разработка</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
 <div id="gap" role="alert" hidden></div>
+<section class="panel">
+  <h2>Режим и источник задания</h2>
+  <div class="buttons"><label>Режим <select id="mode"><option value="MANUAL">Ручной</option><option value="ARANGA">Сквозной ARANGA</option></select></label><button id="set-mode">Выбрать режим</button></div>
+  <p>Источник частоты: <strong id="frequency-source">—</strong></p><p id="frequency-limits" class="hint"></p>
+  <p class="hint">Ручной → ARANGA только после завершения останова. ARANGA → ручной в работе переносит текущее выдаваемое задание. Во время запуска режим фиксирован.</p>
+  <p id="link-warning" class="warning" role="status" hidden></p>
+</section>
 <div class="columns">
-<section class="panel"><h2>Управление</h2><p class="hint">Кнопки создают запросы. Принятие не означает исполнение.</p><div class="buttons"><button id="start" class="primary">Пуск ТО</button><button id="stop" class="danger">Обязательный останов</button></div><div class="frequency"><label>Ручное задание, Гц <input id="frequency" type="number" value="25" step="1"></label><button id="set-frequency">Задать</button></div><div id="confirmations" class="buttons"><button id="bypass-closed">Подтверждаю: ШБ закрыт</button><button id="bypass-open">Подтверждаю: ШБ открыт</button><button id="st-manual">ШТ закрыт вручную, проверено</button></div><p id="last-request" class="hint"></p><details open><summary>Причины запрета нового пуска</summary><ul id="reasons"></ul></details></section>
+<section class="panel">
+  <h2>Местное управление</h2><p class="hint">Кнопки создают запросы. Принятие не означает исполнение.</p>
+  <div class="buttons"><button id="start" class="primary">Пуск ТО</button><button id="stop" class="danger">Обязательный останов</button></div>
+  <div class="frequency"><label>Местное задание, Гц <input id="frequency" type="number" value="25" step="1"></label><button id="frequency-minus" aria-label="Уменьшить местное задание на 1 Гц">−1</button><button id="frequency-plus" aria-label="Увеличить местное задание на 1 Гц">+1</button><button id="set-frequency">Задать</button></div>
+  <p class="hint">В сквозном режиме местная корректировка доступна после диагностированной потери ARANGA до новой записи частоты.</p>
+  <div id="confirmations" class="buttons"><button id="bypass-closed">Подтверждаю: ШБ закрыт</button><button id="bypass-open">Подтверждаю: ШБ открыт</button><button id="st-manual">ШТ закрыт вручную, проверено</button></div>
+  <p id="last-request" class="hint"></p><details open><summary>Причины запрета нового местного пуска</summary><ul id="reasons"></ul></details>
+</section>
 <section class="panel"><h2>Контроль механизмов</h2><div id="mechanisms" class="mechanisms"></div><div class="metrics"><div><small>Q, м³/ч</small><strong id="flow">—</strong></div><div><small>ΔP, бар</small><strong id="dp">—</strong></div><div><small>Проверка циркуляции</small><strong id="circulation">—</strong></div></div><p class="hint">Положение и фазные входы независимы от команды. Наличие напряжения не доказывает вращение.</p></section>
 </div>
+<section class="panel laboratory">
+  <span class="eyebrow">ИМИТАТОР ARANGA · БЕЗ MODBUS</span><h2>Прикладные операции печи</h2>
+  <p><strong id="aranga-link">Связи нет</strong> · <span id="aranga-held">—</span></p>
+  <p id="aranga-ready"></p><p id="aranga-levels" class="hint"></p>
+  <div class="buttons"><button id="aranga-read">Успешное чтение состояния</button><button id="aranga-failed">Неуспешная операция</button></div>
+  <div class="switches"><label><input id="aranga-start" type="checkbox"> Записать Пуск=1</label><label><input id="aranga-stop" type="checkbox"> Записать Стоп=1</label><button id="aranga-controls">Записать оба уровня</button></div>
+  <div class="frequency"><label>Запись ARANGA, Гц <input id="aranga-frequency" type="number" value="35" step="1"></label><button id="aranga-frequency-write">Передать частоту</button></div>
+  <p class="hint">Для первого Пуска запишите 0/0, затем 1/0. Уровень Стоп=1 имеет приоритет. Генератор обмена выше повторяет только успешные чтения каждые 500 мс модельного времени. Для проверки потери отключите его и продвиньте время на 5 с. Пустое поле частоты моделирует отсутствие значения.</p>
+  <p id="aranga-times" class="hint"></p><p id="aranga-result" role="status"></p>
+</section>
 <section class="panel laboratory"><div class="section-title"><div><span class="eyebrow">ДЕЙСТВИЯ ИСПЫТАТЕЛЯ</span><h2>Имитатор входов и времени</h2></div><div class="buttons"><button id="fixture">Загрузить тестовую точку «Остановлен»</button><button id="restart">Имитировать перезапуск</button></div></div><p class="hint">Исходная точка — искусственные данные о холодном остановленном ТО и настроенной системе. Не подтверждение состояния реальной установки. Время идёт только по кнопкам; включённые генераторы повторяют показания независимо от команд.</p><div class="time-controls buttons"><button data-time="0">Цикл без продвижения</button><button data-time="100">+0,1 с</button><button data-time="1000">+1 с</button><button data-time="5000">+5 с</button><button data-time="45000">+45 с</button><button id="deliver">Доставить текущие команды</button></div><div class="switches"><label><input id="exchange-hmi" type="checkbox" checked> Имитировать обмен HMI</label><label><input id="exchange-aranga" type="checkbox"> Имитировать обмен ARANGA</label><label><input id="service-main" type="checkbox" checked> Циклы основной программы</label><label><input id="service-supervision" type="checkbox" checked> Циклы надзора</label></div><div id="groups" class="buttons"></div><details><summary>Пошаговый пример</summary><ol><li>Загрузить исходную точку и нажать «Пуск ТО».</li><li>Доставить команды, отдельно имитировать «ШТ открыт».</li><li>Доставить новые команды, отдельно имитировать «оба затвора закрыты» и «ПЧ работает».</li><li>Доставить команду насоса, отдельно имитировать его напряжение. Продвинуть 1 с.</li><li>Доставить открытие затвора, отдельно задать «затвор 1 открыт» и нормальный расход. Продвинуть 5 с.</li><li>Подтвердить закрытие ШБ — состояние «В работе».</li><li>Нажать «Обязательный останов», подтвердить открытие ШБ. Доставить закрытие ШТ и отдельно имитировать его закрытие.</li><li>Доставить команды, отдельно имитировать «затвор 1 закрыт». После выключения насоса доставить новые команды.</li><li>Отдельно задать отсутствие фаз и останов ПЧ. Открытые затворы останова можно имитировать отдельно; их достижения программа для завершения не ждёт.</li></ol></details></section>
 <section class="panel"><h2>Запрос → итоговая команда → доставка → обратная связь</h2><div class="table-scroll"><table><thead><tr><th>Функция</th><th>Запрос</th><th>Итог</th><th>Доставка</th><th>Независимая обратная связь</th></tr></thead><tbody id="outputs"></tbody></table></div></section>
 <section class="panel"><h2>Входные сигналы</h2><p class="hint">GOOD — достоверно, BAD — диагностическая ошибка, UNKNOWN — данных нет. «Актуален» и «повторять ответы» задаются отдельно. Прямые аналоговые входы здесь уже после фильтра; физический фильтр 2 с пока не моделируется.</p><div class="table-scroll"><table><thead><tr><th>Сигнал</th><th>Значение</th><th>Качество</th><th>Актуален</th><th>Повторять</th><th>Обновлён / достоверен, с</th><th>Действие</th></tr></thead><tbody id="signals"></tbody></table></div></section>
 <section class="panel"><h2>Журнал событий</h2><p id="faults" class="warning"></p><div id="journal" class="journal" aria-live="polite"></div></section>
 <footer>Моделируются логические модули в одном процессе Node.js. Изоляция служб, systemd, реальные драйверы, NV, полный набор защит и инженерных тестов ещё не реализованы. Результат не подтверждает готовность шкафа или безопасный пуск.</footer>
+
 </main></body></html>

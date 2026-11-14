@@ -28,3 +28,60 @@ test('HTTP: страница, API, поколение команд, запрет
     assert.match(outdated.lastRequest.reasons.join(' '), /Устаревший контекст/);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('HTTP: сквозной сценарий и удержание после потери ARANGA доступны через действия веб-HMI', async () => {
+  const { server } = createSimulatorServer(); // Настоящий локальный HTTP с виртуальными I/O внутри.
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port; // Временный loopback-порт теста.
+  let snapshot = await (await fetch(base + '/api/state')).json(); // Контекст каждого запроса обновляется ответом сервера.
+  const act = async data => { // data — те же декларативные действия, которые отправляет веб-клиент.
+    const response = await fetch(base + '/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ ...data, generation: snapshot.generation, procedureId: snapshot.procedureId }) }); // Транспорт не заменяет физические подтверждения.
+    assert.equal(response.status, 200);
+    snapshot = await response.json();
+    return snapshot;
+  };
+  try {
+    await act({ type: 'fixture' });
+    await act({ type: 'command', action: 'mode', value: 'ARANGA' });
+    await act({ type: 'exchange', name: 'aranga', enabled: true });
+    await act({ type: 'aranga', operation: 'controls', payload: { start: false, stop: false } });
+    await act({ type: 'aranga', operation: 'controls', payload: { start: true, stop: false } });
+    assert.equal(snapshot.state, 'STARTING');
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'stOpen' });
+    await act({ type: 'group', name: 'valvesClosed' });
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'fanOn' });
+    await act({ type: 'group', name: 'pump1On' });
+    await act({ type: 'advance', ms: 1000 });
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'valve1Open' });
+    await act({ type: 'group', name: 'flowNormal' });
+    await act({ type: 'advance', ms: 5000 });
+    await act({ type: 'command', action: 'confirm_bypass_closed' });
+    assert.equal(snapshot.state, 'RUNNING');
+    assert.equal(snapshot.outputs['vfd.frequency'].value, 20);
+    await act({ type: 'aranga', operation: 'frequency', payload: { value: 36 } });
+    await act({ type: 'exchange', name: 'aranga', enabled: false });
+    await act({ type: 'advance', ms: 5000 });
+    assert.equal(snapshot.telemetry.arangaWarning, true);
+    await act({ type: 'command', action: 'frequency', value: 32 });
+    await act({ type: 'aranga', operation: 'read' });
+    assert.equal(snapshot.outputs['vfd.frequency'].value, 32);
+    await act({ type: 'aranga', operation: 'frequency', payload: { value: 36 } });
+    assert.equal(snapshot.outputs['vfd.frequency'].value, 36);
+    await act({ type: 'aranga', operation: 'controls', payload: { start: true, stop: true } });
+    assert.equal(snapshot.state, 'STOPPING');
+    assert.equal(snapshot.outputs['vfd.frequency'].value, 25);
+    await act({ type: 'command', action: 'confirm_bypass_open' });
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'stClosed' });
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'valve1Closed' });
+    await act({ type: 'deliver_all' });
+    await act({ type: 'group', name: 'pumpsOff' });
+    await act({ type: 'group', name: 'fanOff' });
+    assert.equal(snapshot.stoppedConfirmed, true);
+    assert.equal(snapshot.coverageGap, null);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

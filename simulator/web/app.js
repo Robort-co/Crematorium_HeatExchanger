@@ -1,6 +1,9 @@
 // Клиент показывает серверное состояние. Никакие команды к механизмам из браузера не отправляются.
 let snapshot = null; // Последний снимок тестового мира с поколением для защиты от старых команд.
 let busy = false; // Не допускаем одновременные действия одного клиента.
+let renderedMode = null; // Последний показанный режим: при переходе на ручной поле получает фактически выданное задание D-267.
+let renderedGeneration = null; // Новая фикстура/перезапуск не оставляет значение поля от прежнего тестового мира.
+const sourceLabels = { MANUAL: 'Ручное HMI', FMIN: 'Fmin до первой записи', ARANGA: 'ARANGA', HOLD: 'Удержание после потери ARANGA', LOCAL: 'Местная корректировка', STOP_COOLING: 'Останов: частота охлаждения', STOP_ARANGA: 'Прерванный запуск: новая запись ARANGA', STARTUP_LINK_FALLBACK: 'Прерванный запуск: аварийная частота', FMIN_OR_INACTIVE: 'Запуск / вне рабочего управления' }; // Источник задания отличается от наличия связи.
 const stateLabels = { STOPPED: 'Остановлен', STARTING: 'Запуск', RUNNING: 'В работе', STOPPING: 'Останов' }; // Четыре основных состояния; null отображается отдельно.
 const stageLabels = { IDLE: 'Исходная точка', OPEN_ST: 'Открытие ШТ', CLOSE_VALVES: 'Закрытие обоих затворов', PUMP_ON: 'Включение насоса', OPEN_VALVE: 'Открытие рабочей ветви', CIRCULATION: 'Проверка циркуляции / ШБ', COMPLETE: 'Процедура завершена', WAIT_BYPASS: 'Ожидание открытия ШБ', CLOSE_ST: 'Закрытие ШТ', CLOSE_PUMP: 'Закрытие рабочего затвора', FINAL_OUTPUTS: 'Команды положений останова' }; // Названия подэтапов, не дополнительных состояний ТО.
 const positionLabels = { OPEN: 'Открыт', CLOSED: 'Закрыт', UNKNOWN: 'Нет данных', CONTRADICTORY: 'Противоречие 1/1', INTERMEDIATE: 'Положение не подтверждено' }; // Значения только по входам.
@@ -49,7 +52,19 @@ function render() {
   element('gap').textContent = 'ПАУЗА МОДЕЛИ: ' + (snapshot.coverageGap ?? '') + '. Состояние исполнения выходов за этой границей не моделируется. Для нового прогона загрузите исходную точку.';
   element('start').disabled = snapshot.startReasons.length > 0;
   element('stop').disabled = !snapshot.hmiAvailable || !['STARTING', 'RUNNING'].includes(snapshot.state) || !!snapshot.coverageGap;
-  element('set-frequency').disabled = snapshot.state !== 'RUNNING' || !snapshot.hmiAvailable || !!snapshot.coverageGap;
+  const canSetFrequency = snapshot.state === 'RUNNING' && snapshot.hmiAvailable && !snapshot.coverageGap && (snapshot.mode === 'MANUAL' || snapshot.aranga.holding); // Местная корректировка не отбирает нормальное сквозное управление.
+  element('set-frequency').disabled = !canSetFrequency;
+  element('frequency-minus').disabled = !canSetFrequency;
+  element('frequency-plus').disabled = !canSetFrequency;
+  element('mode').value = snapshot.mode;
+  element('set-mode').disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || !['STOPPED', 'RUNNING'].includes(snapshot.state);
+  element('mode').disabled = element('set-mode').disabled;
+  element('frequency-source').textContent = sourceLabels[snapshot.telemetry.frequencySource] ?? snapshot.telemetry.frequencySource;
+  if (renderedMode !== snapshot.mode || renderedGeneration !== snapshot.generation) {
+    element('frequency').value = snapshot.mode === 'MANUAL' ? snapshot.manualFrequency : (snapshot.aranga.activeFrequency ?? snapshot.config.fmin);
+    renderedMode = snapshot.mode;
+    renderedGeneration = snapshot.generation;
+  }
   element('bypass-closed').disabled = snapshot.state !== 'STARTING' || snapshot.stage === 'OPEN_ST' || !snapshot.hmiAvailable;
   element('bypass-open').disabled = snapshot.state !== 'STOPPING' || !snapshot.hmiAvailable || snapshot.stage !== 'WAIT_BYPASS';
   element('st-manual').disabled = snapshot.state !== 'STOPPING' || !snapshot.stBlocked || !snapshot.bypassOpen || !snapshot.hmiAvailable;
@@ -61,6 +76,16 @@ function render() {
   element('circulation').textContent = ({ NORMAL: 'Подтверждена', DISAGREEMENT: 'Расхождение Q/ΔP', BOTH_LOW: 'Q и ΔP ниже', DP_ONLY_NORMAL: 'Только ΔP в норме', DP_ONLY_LOW: 'Только ΔP ниже', UNKNOWN: 'Нет данных' })[snapshot.circulation];
   element('exchange-hmi').checked = snapshot.exchange.hmi;
   element('exchange-aranga').checked = snapshot.exchange.aranga;
+  element('aranga-link').textContent = snapshot.arangaAvailable ? 'Связь есть' : 'Связи нет';
+  element('aranga-link').className = snapshot.arangaAvailable ? 'ok' : 'warning';
+  element('aranga-held').textContent = snapshot.aranga.holding ? 'Удержание: возврат только по новой записи частоты' : 'Удержание не активно';
+  element('aranga-ready').textContent = snapshot.telemetry.ready ? 'Готов к дистанционному Пуску' : 'Не готов: ' + snapshot.remoteStartReasons.join('; ');
+  element('aranga-levels').textContent = 'Последние уровни: Пуск=' + text(snapshot.aranga.startLevel) + ', Стоп=' + text(snapshot.aranga.stopLevel) + '. ' + (snapshot.aranga.startArmed ? 'Пуск=0 получен; ожидается фронт.' : 'Для нового Пуска требуется 0 → 1.');
+  element('aranga-times').textContent = 'Последняя попытка / успех: ' + seconds(snapshot.aranga.lastAttemptAt) + ' / ' + seconds(snapshot.aranga.lastSuccessAt) + ' с. Частота: ' + text(snapshot.aranga.frequencyValue) + ' Гц; качество последней записи ' + snapshot.aranga.frequencyQuality + '; обновлена / достоверна: ' + seconds(snapshot.aranga.frequencyUpdatedAt) + ' / ' + seconds(snapshot.aranga.frequencyGoodAt) + ' с.';
+  element('aranga-result').textContent = snapshot.aranga.lastRequest ? snapshot.aranga.lastRequest.operation + ': ' + snapshot.aranga.lastRequest.result + '. ' + snapshot.aranga.lastRequest.reasons.join('; ') : 'Операций пока нет.';
+  element('frequency-limits').textContent = snapshot.telemetry.frequencyTreatment ? 'LIMIT: ' + text(snapshot.telemetry.frequencyTreatment.limitApplied) + '; обход резонанса: ' + text(snapshot.telemetry.frequencyTreatment.resonanceApplied) : 'Обработка частоты ещё не выполнялась.';
+  element('link-warning').hidden = !snapshot.telemetry.arangaWarning && !snapshot.telemetry.hmiWarning;
+  element('link-warning').textContent = [snapshot.telemetry.arangaWarning ? 'Нет обмена с ARANGA: рабочее задание удерживается.' : '', snapshot.telemetry.hmiWarning ? 'Нет доступной управляющей HMI: местные команды недоступны.' : ''].filter(Boolean).join(' ');
   element('service-main').checked = snapshot.mainEnabled;
   element('service-supervision').checked = snapshot.supervisionEnabled;
   element('outputs').innerHTML = Object.entries(snapshot.outputs).map(([name, command]) => '<tr><td>' + escaped(name) + '</td><td>' + escaped(snapshot.requests[name]) + '</td><td>' + escaped(command.value) + '<small>#' + command.id + ' · ' + seconds(command.issuedAt) + ' с</small></td><td>' + escaped(command.delivery) + '<small>' + seconds(command.deliveredAt) + ' с</small><button data-fail="' + name + '" data-id="' + command.id + '">Ошибка доставки</button></td><td>' + escaped(feedback(name)) + '</td></tr>').join('');
@@ -91,6 +116,18 @@ element('bypass-closed').onclick = () => act({ type: 'command', action: 'confirm
 element('bypass-open').onclick = () => act({ type: 'command', action: 'confirm_bypass_open' });
 element('st-manual').onclick = () => act({ type: 'command', action: 'confirm_st_closed_manually' });
 element('set-frequency').onclick = () => act({ type: 'command', action: 'frequency', value: Number(element('frequency').value) });
+element('set-mode').onclick = () => act({ type: 'command', action: 'mode', value: element('mode').value });
+for (const [id, delta] of [['frequency-minus', -1], ['frequency-plus', 1]]) { // id/delta — ручные кнопки с шагом 1 Гц, D-270.
+  element(id).onclick = () => {
+    const value = Number(element('frequency').value) + delta; // Новое числовое задание, не команда разгона ПЧ.
+    element('frequency').value = value;
+    act({ type: 'command', action: 'frequency', value });
+  };
+}
+element('aranga-read').onclick = () => act({ type: 'aranga', operation: 'read' });
+element('aranga-failed').onclick = () => act({ type: 'aranga', operation: 'failed' });
+element('aranga-controls').onclick = () => act({ type: 'aranga', operation: 'controls', payload: { start: element('aranga-start').checked, stop: element('aranga-stop').checked } });
+element('aranga-frequency-write').onclick = () => act({ type: 'aranga', operation: 'frequency', payload: { value: element('aranga-frequency').value === '' ? null : Number(element('aranga-frequency').value) } });
 element('deliver').onclick = () => act({ type: 'deliver_all' });
 document.querySelectorAll('[data-time]').forEach(button => { // button — выбранный явный шаг времени модели.
   button.onclick = () => act({ type: 'advance', ms: Number(button.dataset.time) });
