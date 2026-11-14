@@ -29,7 +29,7 @@ export class MainProgram {
         request['vfd.run'] = 'START';
         request['vfd.frequency'] = sim.frequency.apply(sim.config.fmin);
       }
-      if (this.stage === 'CLOSE_VALVES') {
+      if (!sim.pumps.active && this.stage === 'CLOSE_VALVES') {
         request['valve1.direction'] = 'CLOSE';
         request['valve2.direction'] = 'CLOSE';
         if (sim.signals.position('valve1') === 'CLOSED' && sim.signals.position('valve2') === 'CLOSED') {
@@ -38,7 +38,7 @@ export class MainProgram {
           sim.log('STAGE', 'Оба затвора закрыты: запрос включения рабочего насоса');
         }
       }
-      if (this.stage === 'PUMP_ON') {
+      if (!sim.pumps.active && this.stage === 'PUMP_ON') {
         request['pump' + pump + '.run'] = true;
         const issued = sim.outputs.commands['pump' + pump + '.run']; // Таймер от итоговой команды, не от нажатия Пуск.
         if (issued?.value === true) this.pumpOnAt ??= issued.issuedAt;
@@ -48,7 +48,7 @@ export class MainProgram {
           sim.log('STAGE', 'Выдержка 1 с: запрос открытия рабочего затвора');
         }
       }
-      if (this.stage === 'OPEN_VALVE' || this.stage === 'CIRCULATION') {
+      if (!sim.pumps.active && (this.stage === 'OPEN_VALVE' || this.stage === 'CIRCULATION')) {
         request['valve' + pump + '.direction'] = this.stage === 'OPEN_VALVE' ? 'OPEN' : 'STOP';
         if (sim.signals.position('valve' + pump) === 'OPEN') {
           this.openedAt ??= sim.clock.now;

@@ -43,6 +43,24 @@ function feedback(name) { // name — функция выхода; резуль�
 }
 
 function render() {
+  const group = snapshot.pumpGroup; // Состояние группы отдельно от отдельных выходов и входов.
+  const operation = group.active; // Уже принятая смена, не новый запрос при каждом обновлении HMI.
+  element('pump-state').textContent = 'Выбран насос ' + snapshot.selectedPump + (operation ? ' · Смена ' + operation.from + ' → ' + operation.to + ' · ' + operation.stage : '') + (group.groupFault ? ' · Критическая неисправность группы; запрошена внешняя циркуляция' : '');
+  element('pump-branches').innerHTML = [1, 2].map(pump => { // pump — номер отображаемой ветви.
+    const branch = group.branches[pump]; // Ошибки, блокировки и ручное положение не смешиваются с DI.
+    return '<div class="mechanism"><b>Насос ' + pump + '</b>Команда: ' + escaped(snapshot.outputs['pump' + pump + '.run']?.value) + '<br>Фазы: ' + escaped(feedback('pump' + pump + '.run')) + '<br>Исключение: ' + escaped(branch.faults.join(', ') || 'нет') + '<br>Движение привода заблокировано: ' + text(branch.valveBlocked || (branch.electricalIsolation && !branch.isolationConfirmed)) + '<br>Закрытие подтверждено вручную: ' + text(branch.manualClosed) + '</div>';
+  }).join('');
+  const waiting = operation?.manualRequestedAt !== null && operation?.manualRequestedAt !== undefined; // Непрерывный отсчёт хранится сервером, не браузером.
+  element('pump-wait').hidden = !waiting;
+  element('pump-wait').textContent = waiting ? 'Затвор ' + operation.from + ': движение снято. Отключить автомат привода, закрыть вручную и проверить. До обязательного останова: ' + Math.max(0, (60000 - snapshot.time + operation.manualRequestedAt) / 1000).toFixed(1) + ' с.' : '';
+  for (const pump of [1, 2]) { // pump — команды строго одной ветви.
+    element('switch-pump-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || snapshot.state !== 'RUNNING' || snapshot.pumpSwitchReasons[pump].length > 0;
+    element('switch-pump-' + pump).title = snapshot.pumpSwitchReasons[pump].join('; ');
+    element('confirm-valve-' + pump).hidden = !waiting || operation.from !== pump;
+    element('confirm-valve-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
+    element('confirm-breaker-' + pump).hidden = !group.branches[pump].electricalIsolation || group.branches[pump].isolationConfirmed;
+    element('confirm-breaker-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
+  }
   element('state').textContent = stateLabels[snapshot.state] ?? 'Неизвестно после загрузки';
   element('stage').textContent = stageLabels[snapshot.stage] ?? snapshot.stage;
   element('time').textContent = seconds(snapshot.time) + ' с';
@@ -108,6 +126,11 @@ function render() {
   element('journal').innerHTML = [...snapshot.journal].reverse().map(event => '<div><time>' + seconds(event.at) + '</time><b>' + escaped(event.kind) + '</b>' + escaped(event.message) + '</div>').join('');
 }
 
+for (const pump of [1, 2]) { // pump — номер насоса из отдельной подписанной кнопки.
+  element('switch-pump-' + pump).onclick = () => act({ type: 'command', action: 'switch_pump', value: pump });
+  element('confirm-valve-' + pump).onclick = () => act({ type: 'command', action: 'confirm_valve_closed', value: pump });
+  element('confirm-breaker-' + pump).onclick = () => act({ type: 'command', action: 'confirm_pump_breaker_off', value: pump });
+}
 element('fixture').onclick = () => act({ type: 'fixture' });
 element('restart').onclick = () => act({ type: 'restart' });
 element('start').onclick = () => act({ type: 'command', action: 'start' });

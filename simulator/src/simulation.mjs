@@ -5,6 +5,7 @@ import { Protection } from './protection.mjs';
 import { FrequencyPolicy } from './frequency.mjs';
 import { Supervision } from './supervision.mjs';
 import { ArangaExchange } from './aranga.mjs';
+import { PumpGroup } from './pumps.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -14,6 +15,10 @@ export const INPUT_GROUPS = {
   valve1Open: { label: 'Имитировать: затвор 1 открыт', values: { 'valve1.open': true, 'valve1.closed': false } },
   valve1Closed: { label: 'Имитировать: затвор 1 закрыт', values: { 'valve1.open': false, 'valve1.closed': true } },
   valve2Open: { label: 'Имитировать: затвор 2 открыт', values: { 'valve2.open': true, 'valve2.closed': false } },
+  valve2Closed: { label: 'Имитировать: затвор 2 закрыт', values: { 'valve2.open': false, 'valve2.closed': true } },
+  pump2On: { label: 'Имитировать: напряжение насоса 2 есть', values: { 'pump2.l1': true, 'pump2.l2': true, 'pump2.l3': true } },
+  pump1Off: { label: 'Имитировать: напряжения насоса 1 нет', values: { 'pump1.l1': false, 'pump1.l2': false, 'pump1.l3': false } },
+  pump2Off: { label: 'Имитировать: напряжения насоса 2 нет', values: { 'pump2.l1': false, 'pump2.l2': false, 'pump2.l3': false } },
   pump1On: { label: 'Имитировать: напряжение насоса 1 есть', values: { 'pump1.l1': true, 'pump1.l2': true, 'pump1.l3': true } },
   pumpsOff: { label: 'Имитировать: напряжения обоих насосов нет', values: { 'pump1.l1': false, 'pump1.l2': false, 'pump1.l3': false, 'pump2.l1': false, 'pump2.l2': false, 'pump2.l3': false } },
   fanOn: { label: 'Имитировать: ПЧ работает, 20 Гц', values: { 'vfd.running': true, 'vfd.frequency': 20 } },
@@ -41,10 +46,11 @@ export class Simulation {
     this.mode = 'MANUAL'; // D-291: если сквозной режим не выбран — ручной.
     this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null }; // D-269: 38 Гц только для прерванного сквозного запуска; не рабочей потери связи D-330.
     this.manualFrequency = 25; // D-296: сохранённое ручное задание не заменяется пусковым Fmin.
-    this.selectedPump = 1; // Ветка 1 — ограничение первого тестового профиля, не автоматическая смена.
+    this.selectedPump = 1; // Начальный выбор тестового профиля; после успешной смены изменяется.
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
+    this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
     this.aranga = new ArangaExchange(); // Прикладные операции имитатора печи; реального Modbus нет.
@@ -97,7 +103,14 @@ export class Simulation {
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
     const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
     const savedManualFrequency = this.manualFrequency; // D-267/D-291: перезапуск не заменяет известное ручное задание умолчанием.
+    const savedBranches = structuredClone(this.pumps.branches); // Только память текущего процесса, не реальное NV.
+    const savedGroupFault = this.pumps.groupFault; // Перезапуск не снимает критическую неисправность группы.
     this.resetRuntime();
+    this.pumps.branches = savedBranches;
+    this.pumps.groupFault = savedGroupFault;
+    for (const branch of Object.values(this.pumps.branches)) { // branch — сохраняемые ошибки; временные подтверждения отменяются.
+      branch.classificationAt = null; branch.manualClosed = false; branch.isolationConfirmed = false;
+    }
     this.protection.faults = savedFaults;
     this.protection.stBlocked = savedStBlock;
     this.mode = savedMode;
@@ -178,6 +191,15 @@ export class Simulation {
     else if (action === 'start') {
       record.reasons = this.startReasons();
       if (!record.reasons.length) { this.beginStart('HMI'); record.result = 'ACCEPTED'; }
+    } else if (action === 'switch_pump') {
+      record.reasons = this.state === 'RUNNING' ? this.pumps.begin(this, value) : ['Ручная смена этого профиля доступна только в работе'];
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    } else if (action === 'confirm_valve_closed') {
+      record.reasons = this.pumps.confirmClosed(this, value);
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    } else if (action === 'confirm_pump_breaker_off') {
+      record.reasons = this.pumps.confirmIsolation(this, value);
+      if (!record.reasons.length) record.result = 'ACCEPTED';
     } else if (action === 'mode') {
       this.changeMode(value, record);
     } else if (action === 'stop') {
@@ -210,6 +232,7 @@ export class Simulation {
       if (this.signals.read('grid.normal') !== true || this.signals.read('temperature.normal') !== true ||
           this.signals.read('cooling.required') !== false || this.signals.read('vfd.fault') !== false ||
           this.signals.read('vfd.exchange') !== true) {
+        if (this.signals.read('grid.normal') === false) this.pumps.cancelClassificationForGrid(this);
         this.gap('Полные реакции сети, температур, охлаждения или аварии/обмена ПЧ ещё не реализованы; выдача модели приостановлена');
         return;
       }
@@ -252,6 +275,7 @@ export class Simulation {
       positions: { st: this.signals.position('st'), valve1: this.signals.position('valve1'), valve2: this.signals.position('valve2') },
       flow: this.signals.flow(), dp: before !== null && after !== null ? after - before : null,
       circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
+      selectedPump: this.selectedPump, pumpGroup: this.pumps, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
   }
@@ -263,6 +287,7 @@ export class Simulation {
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },
+      pumpGroup: { selected: this.selectedPump, switching: this.pumps.active, branches: this.pumps.branches, emergencyCirculationRequested: this.pumps.emergencyCirculationRequested },
       arangaWarning: this.mode === 'ARANGA' && this.state === 'RUNNING' && !this.aranga.available(this), hmiWarning: !this.hmiAvailable() };
   }
 }

@@ -2,7 +2,7 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.2 · локальная разработка</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.3 · насосная группа</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
@@ -25,6 +25,15 @@
 </section>
 <section class="panel"><h2>Контроль механизмов</h2><div id="mechanisms" class="mechanisms"></div><div class="metrics"><div><small>Q, м³/ч</small><strong id="flow">—</strong></div><div><small>ΔP, бар</small><strong id="dp">—</strong></div><div><small>Проверка циркуляции</small><strong id="circulation">—</strong></div></div><p class="hint">Положение и фазные входы независимы от команды. Наличие напряжения не доказывает вращение.</p></section>
 </div>
+<section class="panel">
+  <h2>Насосная группа · смена и резерв</h2>
+  <p id="pump-state" role="status"></p><div id="pump-branches" class="mechanisms"></div>
+  <div class="buttons"><button id="switch-pump-1">Перейти на насос 1</button><button id="switch-pump-2">Перейти на насос 2</button></div>
+  <p id="pump-wait" class="warning" role="status" hidden></p>
+  <div class="buttons"><button id="confirm-valve-1" hidden>Привод 1 обесточен, затвор 1 закрыт вручную и проверен</button><button id="confirm-valve-2" hidden>Привод 2 обесточен, затвор 2 закрыт вручную и проверен</button></div>
+  <div class="buttons"><button id="confirm-breaker-1" hidden>Автомат насоса 1 отключён и проверен</button><button id="confirm-breaker-2" hidden>Автомат насоса 2 отключён и проверен</button></div>
+  <p class="hint">Ручное подтверждение не меняет концевики и не снимает неисправность. Автоматы насоса и привода затвора — разные устройства. 45 + 60 с — таймеры процедуры, не подтверждённое безопасное время работы насоса.</p>
+</section>
 <section class="panel laboratory">
   <span class="eyebrow">ИМИТАТОР ARANGA · БЕЗ MODBUS</span><h2>Прикладные операции печи</h2>
   <p><strong id="aranga-link">Связи нет</strong> · <span id="aranga-held">—</span></p>

@@ -236,7 +236,7 @@ test('Заключительное закрытие по 45 с выключае�
   assert.equal(sim.state, 'STOPPED');
   assert.equal(sim.outputs.value('pump1.run'), false);
   assert.equal(sim.signals.position('valve1'), 'OPEN');
-  assert.equal(sim.protection.faults.some(fault => fault.code === 'FINAL_VALVE_CLOSE_TIMEOUT'), true);
+  assert.equal(sim.protection.faults.some(fault => fault.code === 'FINAL_VALVE_CLOSE_TIMEOUT_1'), true);
 });
 
 test('Отказ основной программы: надзор 2 с, независимое завершение принятого останова', () => {
@@ -324,6 +324,10 @@ test('Достоверное отсутствие фаз 1 с снимает ON,
   sim.sampleGroup('pumpsOff');
   sim.advance(1000);
   assert.equal(sim.outputs.value('pump1.run'), false);
-  assert.ok(sim.coverageGap);
-  assert.equal(sim.protection.faults.length, 0); // Этап 2 с ещё не реализован, индивидуальная неисправность не придумана.
+  assert.equal(sim.coverageGap, null);
+  assert.equal(sim.protection.faults.length, 0); // Индивидуальная неисправность ещё не подтверждена: идут отдельные 2 с.
+  sim.advance(1900);
+  assert.equal(sim.pumps.active, null);
+  sim.advance(100);
+  assert.equal(sim.pumps.active?.to, 2);
 });
