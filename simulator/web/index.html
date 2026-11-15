@@ -2,7 +2,7 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.4 · гидравлическая диагностика</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.5 · затворы и инженерные проверки</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
@@ -34,8 +34,22 @@
   <div class="buttons"><button id="switch-pump-1">Перейти на насос 1</button><button id="switch-pump-2">Перейти на насос 2</button></div>
   <p id="pump-wait" class="warning" role="status" hidden></p>
   <div class="buttons"><button id="confirm-valve-1" hidden>Привод 1 обесточен, затвор 1 закрыт вручную и проверен</button><button id="confirm-valve-2" hidden>Привод 2 обесточен, затвор 2 закрыт вручную и проверен</button></div>
+  <div id="valve-waits" class="buttons"></div>
   <div class="buttons"><button id="confirm-breaker-1" hidden>Автомат насоса 1 отключён и проверен</button><button id="confirm-breaker-2" hidden>Автомат насоса 2 отключён и проверен</button></div>
   <p class="hint">Ручное подтверждение не меняет концевики и не снимает неисправность. Автоматы насоса и привода затвора — разные устройства. 45 + 60 с — таймеры процедуры, не подтверждённое безопасное время работы насоса.</p>
+</section>
+<section class="panel" id="engineering-panel">
+  <h2>Отдельные инженерные проверки</h2>
+  <p class="hint">Только имитация. Выключенная печь и квалификация инженера — явные предпосылки испытателя; аппаратное подтверждение и производственные права не реализованы. Тест не запускает ТО. Успех не снимает ошибки автоматически.</p>
+  <div class="buttons"><label><input type="checkbox" id="engineering-assumption"> Печь выключена, проверку выполняет инженер</label><button id="engineering-enter">Войти в инженерный режим</button><button id="engineering-leave">Выйти из режима</button><button id="engineering-stop" class="danger">Остановить проверку</button></div>
+  <p id="engineering-state" role="status"></p>
+  <label><input type="checkbox" id="engineering-repaired"> Причина устранена, ручное вмешательство окончено; питание подготовлено к проверке</label>
+  <p class="hint">Для проверки затвора после ремонта вручную включают его отдельный автомат при снятых командах. Для насоса также требуется подготовленное питание насоса. После прерывания ремонтной проверки затвора автомат нужно снова отключить.</p>
+  <div id="engineering-branches" class="mechanisms"></div>
+  <div id="engineering-actions" class="buttons"></div>
+  <p class="hint">Тест насоса: противоположная ветвь изолирована → свой затвор закрыт → насос → открытие → через 5 с проверка Q и ΔP независимо от флага → OFF с новым подтверждением 000. Отдельный тест затвора: открыт → закрыт → открыт. Все входы задаются испытателем отдельно.</p>
+  <div class="buttons"><button id="reset-flow">Подтверждаю отдельный сброс аварий расхода после останова</button></div>
+  <p class="hint">Сброс аварий расхода требует достоверных Q и обоих давлений. Нулевой расход при OFF допустим; требование следующего полного пуска по Q и ΔP сохраняется.</p>
 </section>
 <section class="panel laboratory">
   <span class="eyebrow">ИМИТАТОР ARANGA · БЕЗ MODBUS</span><h2>Прикладные операции печи</h2>

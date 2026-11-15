@@ -50,7 +50,7 @@ export class MainProgram {
       }
       if (!sim.pumps.active && (this.stage === 'OPEN_VALVE' || this.stage === 'CIRCULATION')) {
         request['valve' + pump + '.direction'] = this.stage === 'OPEN_VALVE' ? 'OPEN' : 'STOP';
-        if (sim.signals.position('valve' + pump) === 'OPEN') {
+        if (sim.valves.passage(sim, pump)) {
           this.openedAt ??= sim.clock.now;
           this.stage = 'CIRCULATION';
           request['valve' + pump + '.direction'] = 'STOP';

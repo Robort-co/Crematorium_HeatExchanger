@@ -2,6 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSimulatorServer } from '../server.mjs';
 
+test('HTTP: инженерный отказ по гидравлике, успешный повтор и отдельный возврат ветви через команды HMI', async () => {
+  const { server } = createSimulatorServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let snapshot = await (await fetch(base + '/api/state')).json();
+  const act = async data => {
+    const response = await fetch(base + '/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ generation: snapshot.generation, procedureId: snapshot.procedureId, ...data }) });
+    assert.equal(response.status, 200); snapshot = await response.json();
+  };
+  try {
+    await act({ type: 'fixture' }); await act({ type: 'command', action: 'engineering_enter', value: true });
+    const oldProcedure = snapshot.procedureId;
+    for (const success of [false, true]) {
+      await act({ type: 'group', name: 'valve2Closed' });
+      await act({ type: 'command', action: 'engineering_test', value: { kind: 'pump', pump: 1, repaired: true } });
+      assert.equal(snapshot.lastRequest.result, 'ACCEPTED');
+      assert.equal(snapshot.telemetry.state, 'STOPPED'); assert.equal(snapshot.telemetry.ready, false);
+      await act({ type: 'group', name: 'valve1Closed' }); await act({ type: 'advance', ms: 100 });
+      await act({ type: 'group', name: 'pump1On' }); await act({ type: 'advance', ms: 1100 });
+      await act({ type: 'group', name: 'valve1Open' });
+      await act({ type: 'group', name: success ? 'flowNormal' : 'flowZero' }); await act({ type: 'advance', ms: 5000 });
+      assert.equal(snapshot.outputs['pump1.run'].value, false);
+      await act({ type: 'group', name: 'pump1Off' });
+      assert.equal(snapshot.engineering.results[1].pump.result, success ? 'PASSED' : 'FAILED');
+    }
+    await act({ type: 'command', action: 'engineering_return', value: { kind: 'pump', pump: 1 }, procedureId: oldProcedure });
+    assert.equal(snapshot.lastRequest.result, 'REJECTED');
+    await act({ type: 'command', action: 'engineering_return', value: { kind: 'pump', pump: 1 } });
+    assert.equal(snapshot.lastRequest.result, 'ACCEPTED');
+    assert.deepEqual(snapshot.pumpGroup.branches[1].exclusions, []);
+    await act({ type: 'command', action: 'engineering_leave' });
+    assert.equal(snapshot.engineering.enabled, false);
+    assert.equal(snapshot.state, 'STOPPED'); assert.equal(snapshot.outputs['pump1.run'].value, false);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
 test('HTTP: смена насосов, независимые входы и останов через API веб-HMI', async () => {
   const { server } = createSimulatorServer(); // Локальный транспорт без реального контроллера.
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

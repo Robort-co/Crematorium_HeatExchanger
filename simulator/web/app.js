@@ -43,6 +43,7 @@ function feedback(name) { // name — функция выхода; резуль�
 }
 
 function render() {
+  renderEngineering();
   const group = snapshot.pumpGroup; // Состояние группы отдельно от отдельных выходов и входов.
   const operation = group.active; // Уже принятая смена, не новый запрос при каждом обновлении HMI.
   element('flow-control').checked = snapshot.config.flowControl;
@@ -61,7 +62,7 @@ function render() {
   for (const pump of [1, 2]) { // pump — команды строго одной ветви.
     element('switch-pump-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || !(snapshot.state === 'RUNNING' || (snapshot.state === 'STARTING' && snapshot.stage === 'CIRCULATION')) || snapshot.pumpSwitchReasons[pump].length > 0;
     element('switch-pump-' + pump).title = snapshot.pumpSwitchReasons[pump].join('; ');
-    element('confirm-valve-' + pump).hidden = !waiting || operation.from !== pump;
+    element('confirm-valve-' + pump).hidden = !((waiting && operation.from === pump) || (snapshot.valves.waits[pump]?.target === 'CLOSED' && !snapshot.valves.waits[pump].suspended));
     element('confirm-valve-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
     element('confirm-breaker-' + pump).hidden = !group.branches[pump].electricalIsolation || group.branches[pump].isolationConfirmed;
     element('confirm-breaker-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
@@ -131,12 +132,54 @@ function render() {
   element('journal').innerHTML = [...snapshot.journal].reverse().map(event => '<div><time>' + seconds(event.at) + '</time><b>' + escaped(event.kind) + '</b>' + escaped(event.message) + '</div>').join('');
 }
 
+function renderEngineering() {
+  const engineering = snapshot.engineering; // Состояние серверного сеанса; обновление окна не запускает тест заново.
+  const blocked = !snapshot.hmiAvailable || !!snapshot.coverageGap;
+  const labels = { PASSED: 'Пройдено', FAILED: 'Не пройдено', NOT_CHECKED: 'Не проверено' };
+  const stages = { PREPARE_OPEN: 'Подготовительное открытие', PREPARE_CLOSED: 'Подготовительное закрытие', CLOSE: 'Проверочное закрытие', BREAK_OPEN: 'Команда снята, подготовка открытия', BREAK_CLOSE: 'Команда снята, подготовка закрытия', OPEN: 'Проверочное открытие', PUMP_ON: 'Включение насоса / задержка 1 с', HYDRAULICS: 'Открытие подтверждено, оценка Q и ΔP через 5 с', WAIT_OFF: 'Ожидание нового подтверждения выключения' };
+  element('engineering-state').textContent = engineering.enabled ? (engineering.active ? 'Ветвь ' + engineering.active.pump + ' · ' + (stages[engineering.active.stage] ?? engineering.active.stage) : 'Инженерный режим. Активных проверок нет.') : 'Инженерный режим выключен.';
+  element('engineering-enter').disabled = blocked || engineering.enabled || !snapshot.stoppedConfirmed;
+  element('engineering-leave').disabled = blocked || !engineering.enabled || !!engineering.active;
+  element('engineering-stop').disabled = blocked || !engineering.active;
+  element('reset-flow').disabled = blocked || !snapshot.stoppedConfirmed;
+  element('engineering-branches').innerHTML = [1, 2].map(pump => {
+    const results = engineering.results[pump];
+    return '<div class="mechanism"><b>Ветвь ' + pump + '</b>' + ['valve', 'pump'].map(kind => {
+      const result = results[kind];
+      return '<p>' + (kind === 'valve' ? 'Затвор: ' : 'Насос: ') + (result ? escaped(labels[result.result]) + ' · ' + escaped(result.reason) + '<br>Основание возврата: ' + (result.valid ? 'действует' : 'нет') : 'не проверен') + '</p>';
+    }).join('') + (engineering.returnRequired[pump] ? '<p class="warning">Проверить и подтвердить полное открытие нижнего ручного крана.</p>' : '') + (engineering.breakerOffRequired[pump] ? '<p class="warning">Отключить отдельный автомат привода затвора и проверить на месте.</p>' : '') + '</div>';
+  }).join('');
+  const actions = []; // Каждое действие дополнительно проверяется сервером при исполнении.
+  for (const pump of [1, 2]) {
+    for (const kind of ['valve', 'pump']) {
+      actions.push({ label: 'Проверить ' + (kind === 'valve' ? 'затвор ' : 'насос ') + pump, action: 'engineering_test', value: { kind, pump }, repair: true, disabled: !engineering.enabled || !!engineering.active });
+      actions.push({ label: 'Вернуть ' + (kind === 'valve' ? 'затвор ' : 'насос ') + pump, action: 'engineering_return', value: { kind, pump }, disabled: !engineering.enabled || !!engineering.active || !engineering.results[pump][kind]?.valid });
+    }
+    actions.push({ label: 'Запросить изоляцию нижним краном ветви ' + pump, action: 'engineering_isolate', value: pump, disabled: !engineering.enabled || !!engineering.active });
+    if (engineering.manualIsolation?.pump === pump && !engineering.manualIsolation.confirmed) actions.push({ label: 'Нижний кран ' + pump + ' закрыт и проверен', action: 'engineering_confirm_isolation', value: pump });
+    if (engineering.returnRequired[pump]) actions.push({ label: 'Нижний кран ' + pump + ' открыт и проверен', action: 'engineering_confirm_return', value: pump, disabled: !!engineering.active });
+    if (engineering.breakerOffRequired[pump]) actions.push({ label: 'Автомат привода ' + pump + ' отключён, проверено', action: 'engineering_breaker_off', value: pump });
+    if (snapshot.faults.some(fault => fault.code === 'VOLTAGE_WHEN_OFF_' + pump)) actions.push({ label: 'Отдельный сброс критической аварии насоса ' + pump, action: 'engineering_reset_voltage', value: pump, disabled: !engineering.enabled });
+  }
+  element('engineering-actions').innerHTML = actions.map((action, index) => '<button data-engineering="' + index + '"' + (blocked || action.disabled ? ' disabled' : '') + '>' + escaped(action.label) + '</button>').join('');
+  element('engineering-actions').querySelectorAll('button').forEach(button => {
+    const action = actions[Number(button.dataset.engineering)];
+    button.onclick = () => act({ type: 'command', action: action.action, value: action.repair ? { ...action.value, repaired: element('engineering-repaired').checked } : action.value });
+  });
+  element('valve-waits').innerHTML = Object.entries(snapshot.valves.waits).map(([pump, wait]) => '<span>Затвор ' + pump + ': ' + escaped(wait.target === 'OPEN' ? 'проверить открытие' : 'закрыть и проверить') + ', осталось ' + seconds(wait.remaining) + ' с' + (wait.suspended ? ' · сохранено, восстановление этапа не реализовано' : '') + '</span>' + (wait.target === 'OPEN' && !wait.suspended ? '<button data-open="' + pump + '">Привод ' + pump + ' обесточен, полное открытие проверено</button>' : '')).join('');
+  element('valve-waits').querySelectorAll('button').forEach(button => { button.disabled = blocked; button.onclick = () => act({ type: 'command', action: 'confirm_valve_open', value: Number(button.dataset.open) }); });
+}
+
 for (const pump of [1, 2]) { // pump — номер насоса из отдельной подписанной кнопки.
   element('switch-pump-' + pump).onclick = () => act({ type: 'command', action: 'switch_pump', value: pump });
   element('confirm-valve-' + pump).onclick = () => act({ type: 'command', action: 'confirm_valve_closed', value: pump });
   element('confirm-breaker-' + pump).onclick = () => act({ type: 'command', action: 'confirm_pump_breaker_off', value: pump });
 }
 element('flow-control').onchange = () => act({ type: 'command', action: 'flow_control', value: element('flow-control').checked });
+element('engineering-enter').onclick = () => act({ type: 'command', action: 'engineering_enter', value: element('engineering-assumption').checked });
+element('engineering-leave').onclick = () => act({ type: 'command', action: 'engineering_leave' });
+element('engineering-stop').onclick = () => act({ type: 'command', action: 'engineering_stop' });
+element('reset-flow').onclick = () => act({ type: 'command', action: 'reset_flow_faults', value: true });
 element('fixture').onclick = () => act({ type: 'fixture' });
 element('restart').onclick = () => act({ type: 'restart' });
 element('start').onclick = () => act({ type: 'command', action: 'start' });

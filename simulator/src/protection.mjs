@@ -77,6 +77,10 @@ export class Protection {
       for (const pump of [1, 2]) { // Останов относится к каждой реально включённой ветви, включая перекрытие при смене.
         const branch = sim.pumps.branches[pump]; // Предыдущие 45+60 с повторно не запускаются, D-170.
         if (sim.outputs.value('pump' + pump + '.run') !== true) { request['pump' + pump + '.run'] = false; continue; }
+        if (branch.valveBlocked && !branch.manualClosed && !branch.closeExhausted) {
+          sim.gap('Полный останов с заблокированным приводом и без ручного закрытия: процедура ещё не перенесена; 45 с без выданной CLOSE не отсчитываются (D-175)');
+          continue;
+        }
         this.pumpCloseAt[pump] ??= sim.clock.now;
         request['valve' + pump + '.direction'] = branch.valveBlocked ? 'STOP' : 'CLOSE';
         const timedOut = sim.clock.now - this.pumpCloseAt[pump] >= 45000; // Собственный предел полного останова D-169.
@@ -98,7 +102,7 @@ export class Protection {
   }
 
   motion(sim, mechanism, desired) { // mechanism — ШТ/затвор; desired — направление запроса.
-    if (desired === 'STOP') { delete this.motions[mechanism]; return 'STOP'; }
+    if (desired === 'STOP') { delete this.motions[mechanism]; if (mechanism.startsWith('valve')) this.elapsed(sim, 'motionConflict' + mechanism.slice(-1), false); return 'STOP'; }
     if (mechanism === 'st' && this.stBlocked) return 'STOP';
     let movement = this.motions[mechanism]; // Один цикл движения, в том числе уже достигший цели.
     if (!movement || movement.desired !== desired) {
@@ -109,21 +113,24 @@ export class Protection {
     if (position === (desired === 'CLOSE' ? 'CLOSED' : 'OPEN')) movement.done = true;
     if (movement.done) return 'STOP'; // Потеря концевика не инициирует автоматический повтор движения.
     const duration = sim.clock.now - movement.at; // Прошедшее время именно этой команды.
+    const pump = mechanism.startsWith('valve') ? Number(mechanism.slice(-1)) : null; // Только два насосных затвора.
+    const specialClose = pump && desired === 'CLOSE' && sim.pumps.active?.from === pump && sim.pumps.active.cause === 'VALVE_FAILURE'; // D-168: разрешённая попытка закрытия, не обычный ход D-176.
+    const contradictory = pump && this.elapsed(sim, 'motionConflict' + pump, position === 'CONTRADICTORY') >= 5000 && !specialClose;
     const timeout = mechanism === 'st' ? 67500 : 45000; // D-072 и D-040, отдельные пределы.
     const stuckOrigin = mechanism === 'st' && ['OPEN', 'CLOSED'].includes(movement.origin) && // ШТ достоверно остаётся на исходном концевике после разрешённого времени выхода.
       position === movement.origin && position !== desired && duration >= 5000; // D-074, исходная настройка N=5 с.
-    if (duration >= timeout || stuckOrigin) {
+    if (duration >= timeout || stuckOrigin || contradictory) {
+      if (pump) {
+        movement.done = true;
+        sim.valves.motionFault(sim, pump, desired, contradictory && duration < timeout);
+        return 'STOP';
+      }
       this.fault(sim, mechanism + '_MOTION_TIMEOUT', mechanism + ': положение не подтверждено в срок',
         position === 'UNKNOWN' ? 'NO_FEEDBACK' : 'TARGET_NOT_CONFIRMED');
       movement.done = true;
       if (mechanism === 'st') {
         this.stBlocked = true;
         this.beginStop(sim, 'Неисправность ШТ: байпас и обязательный останов (D-075)');
-      } else if (sim.state === 'STARTING' || sim.state === 'RUNNING') {
-        const pump = Number(mechanism.slice(-1)); // Ветвь неисправного насосного затвора.
-        sim.pumps.fail(sim, pump, mechanism + '_MOTION_TIMEOUT', mechanism + ': положение не подтверждено в срок', position === 'UNKNOWN' ? 'NO_FEEDBACK' : 'TARGET_NOT_CONFIRMED');
-        sim.pumps.checkGroup(sim);
-        if (!sim.pumps.groupFault) sim.gap('Восстановление/резервирование при неисправности насосного затвора ещё не реализовано');
       }
       return 'STOP';
     }
@@ -148,6 +155,7 @@ export class Protection {
     }
     if (sim.signals.read('emergency') === true) this.beginStop(sim, 'Кнопка Авария');
     sim.pumps.diagnose(sim, request, low || noPressure); // D-142: 1 с снятия ON + отдельные 2 с классификации.
+    sim.valves.monitor(sim, request, low || noPressure);
     this.checkCommunication(sim);
     // Наличие ARANGA в ручном режиме сюда намеренно не входит (D-328).
     if (sim.state === 'RUNNING' && (sim.supervision.mainStale || sim.supervision.lastCycleAt === null || sim.clock.now - sim.supervision.lastCycleAt >= 2000)) {
@@ -185,6 +193,7 @@ export class Protection {
       sim.pumps.active = null;
     }
     sim.pumps.step(sim, request); // Продолжаем уже принятую смену до заключительного насосного останова.
+    sim.engineering.step(sim, request, low || noPressure); // Только запросы проверки, самостоятельные защиты остаются старше.
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);
     if (low || noPressure) {
       // D-149: низкое давление запрещает насосы, но не открытие затворов.
@@ -201,6 +210,11 @@ export class Protection {
     for (const [name, value] of Object.entries(request)) { // name/value — желаемая функция после обычных приоритетов.
       final[name] = name.endsWith('.direction') ? this.motion(sim, name.split('.')[0], value) : value;
     }
+    // Ошибка хода, выявленная в этом цикле, немедленно снимает проверочные команды D-187/D-205.
+    if (sim.engineering.active?.stage === 'WAIT_OFF') {
+      for (const pump of [1, 2]) { final['pump' + pump + '.run'] = false; final['valve' + pump + '.direction'] = (low || noPressure) ? this.motion(sim, 'valve' + pump, 'OPEN') : 'STOP'; }
+      sim.pumps.enforce(sim, final);
+    }
     if (sim.pumps.groupFault) {
       sim.pumps.enforce(sim, final);
       for (const pump of [1, 2]) { // pump — разрешённое аварийное открытие с прежним контролем хода.
@@ -208,6 +222,7 @@ export class Protection {
         final[name] = this.motion(sim, 'valve' + pump, final[name]);
       }
     }
+    if (sim.coverageGap) return; // Диагноз не разрешает выдачу выдуманной реакции за границей реализованного сценария.
     for (const [name, value] of Object.entries(final)) this.emit(sim, name, value); // name/value — итог после всех вычисленных в цикле ограничений.
     if (this.stBlocked) { this.emit(sim, 'st.direction', 'STOP'); this.emit(sim, 'st.power', false); }
     sim.request = request;
@@ -218,5 +233,11 @@ export class Protection {
     }
     this.lastCycleAt = sim.clock.now;
   }
-  emit(sim, name, value) { sim.outputs.issue(name, value, 'protection'); } // Единственное место итоговой выдачи.
+  emit(sim, name, value) {
+    if (name.startsWith('valve') && ['OPEN', 'CLOSE'].includes(value) && sim.outputs.value(name) !== value) {
+      const branch = sim.pumps.branches[Number(name[5])]; // Только действительно выданное новое движение снимает ручное положение D-177.
+      branch.manualClosed = false; branch.manualOpen = false;
+    }
+    sim.outputs.issue(name, value, 'protection');
+  } // Единственное место итоговой выдачи.
 }

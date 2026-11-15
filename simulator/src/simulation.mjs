@@ -7,6 +7,8 @@ import { Supervision } from './supervision.mjs';
 import { ArangaExchange } from './aranga.mjs';
 import { PumpGroup } from './pumps.mjs';
 import { HydraulicControl } from './hydraulics.mjs';
+import { PumpValves } from './valves.mjs';
+import { Engineering } from './engineering.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -53,6 +55,8 @@ export class Simulation {
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
     this.hydraulics = new HydraulicControl(); // Матрица пусковых/рабочих критериев без подстановки отсутствующих Q/ΔP.
     this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
+    this.valves = new PumpValves(); // Позиционная диагностика и ручные ожидания, отдельно от физических входов.
+    this.engineering = new Engineering(); // Отдельные тесты и разрешённый возврат; производственных ролей пока нет.
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
     this.aranga = new ArangaExchange(); // Прикладные операции имитатора печи; реального Modbus нет.
@@ -109,13 +113,34 @@ export class Simulation {
     const savedFullStartup = this.hydraulics.requireFullStartup; // D-167: требование полной проверки не теряется в демонстрации reboot.
     const savedBranches = structuredClone(this.pumps.branches); // Только память текущего процесса, не реальное NV.
     const savedGroupFault = this.pumps.groupFault; // Перезапуск не снимает критическую неисправность группы.
+    const savedEngineering = this.engineering; // Только модель сохранения обязательств в памяти процесса.
+    const savedWaits = structuredClone(this.valves.waits); // D-257: остаток без времени выключения/загрузки.
+    if (this.pumps.active?.manualRequestedAt !== null && this.pumps.active?.manualRequestedAt !== undefined) {
+      const operation = this.pumps.active; // Прежний насосный ручной запрос переносится как остаток, не новые 60 с.
+      const remaining = Math.max(0, 60000 - (this.clock.now - operation.manualRequestedAt)); // Без времени отсутствия питания/загрузки D-257.
+      savedWaits[operation.from] = { target: 'CLOSED', source: 'SWITCH_CLOSE', remaining, expired: remaining === 0 };
+    }
     this.resetRuntime();
     this.config.flowControl = savedFlowControl;
     this.hydraulics.requireFullStartup = savedFullStartup;
     this.pumps.branches = savedBranches;
     this.pumps.groupFault = savedGroupFault;
+    this.engineering.returnRequired = { ...savedEngineering.returnRequired };
+    this.engineering.breakerOffRequired = { ...savedEngineering.breakerOffRequired };
+    this.engineering.history = structuredClone(savedEngineering.history);
+    this.engineering.results = structuredClone(savedEngineering.results);
+    this.engineering.interruptedAttempt = structuredClone(savedEngineering.interruptedAttempt);
+    for (const pump of [1, 2]) this.engineering.invalidate(pump);
+    if (savedEngineering.active) {
+      const operation = { ...savedEngineering.active, result: savedEngineering.active.result === 'FAILED' ? 'FAILED' : 'NOT_CHECKED', reason: 'Прервано перезагрузкой модели', valid: false }; // Автоматическое продолжение запрещено D-194/D-209; уже выявленный отказ не переименовывается в успех/пропуск.
+      this.engineering.results[operation.pump][operation.kind] = operation;
+      this.engineering.interruptedAttempt = operation;
+      if (operation.kind === 'valve' && operation.repair) this.engineering.breakerOffRequired[operation.pump] = true;
+    }
+    this.valves.waits = savedWaits;
+    for (const wait of Object.values(this.valves.waits)) { wait.suspended = true; wait.updatedAt = this.clock.now; } // Полное восстановление технологического этапа пока не реализовано: остаток не запускает движение.
     for (const branch of Object.values(this.pumps.branches)) { // branch — сохраняемые ошибки; временные подтверждения отменяются.
-      branch.classificationAt = null; branch.manualClosed = false; branch.isolationConfirmed = false;
+      branch.classificationAt = null; branch.manualClosed = false; branch.manualOpen = false; branch.isolationConfirmed = false;
     }
     this.protection.faults = savedFaults;
     this.protection.stBlocked = savedStBlock;
@@ -147,6 +172,9 @@ export class Simulation {
     if (this.state !== 'STOPPED' || !this.stateKnown) reasons.push('Нет подтверждённого программного состояния Остановлен');
     if (!this.stoppedConfirmed()) reasons.push('Не подтверждены останов ПЧ и отсутствие напряжения насосов');
     if (!this.hmiAvailable()) reasons.push('Нет обмена с управляющей HMI');
+    if (this.engineering.enabled) reasons.push('Инженерный режим');
+    if (Object.values(this.engineering.returnRequired).some(Boolean)) reasons.push('Не подтверждён возврат нижнего ручного крана');
+    if (Object.values(this.engineering.breakerOffRequired).some(Boolean)) reasons.push('Не подтверждено обязательное отключение автомата затвора');
     for (const name of ['grid.normal', 'temperature.normal', 'configuration.ready', 'vfd.exchange']) { // name — обязательная предпосылка первого сценария.
       if (this.signals.read(name) !== true) reasons.push('Не подтверждено: ' + DEFINITIONS[name][0]);
     }
@@ -195,6 +223,38 @@ export class Simulation {
     if (procedureId !== this.procedureId) record.reasons.push('Устаревший контекст процедуры: подтверждение не принято');
     else if (this.coverageGap) record.reasons.push('Расчёт модели приостановлен вне реализованного охвата');
     else if (!this.hmiAvailable()) record.reasons.push('Нет доступной HMI');
+    else if (action.startsWith('engineering_')) {
+      const handlers = {
+        engineering_enter: () => this.engineering.enter(this, value),
+        engineering_leave: () => this.engineering.leave(this),
+        engineering_test: () => this.engineering.start(this, value),
+        engineering_stop: () => { if (!this.engineering.active) return ['Нет активной проверки']; this.engineering.stop(this); return []; },
+        engineering_return: () => this.engineering.returnBranch(this, value),
+        engineering_reset_voltage: () => {
+          if (![1, 2].includes(value) || !this.engineering.enabled || this.engineering.active || !this.stoppedConfirmed()) return ['Нужен инженерный режим и подтверждённый останов'];
+          if (this.pumps.branches[value].faults.some(code => /PUMP_PHASES_ON|VOLTAGE_WHEN_OFF/.test(code)) || this.pumps.branches[value].electricalIsolation) return ['Сначала ремонт, успешная проверка и отдельный возврат насоса (D-143)'];
+          this.protection.faults = this.protection.faults.filter(fault => fault.code !== 'VOLTAGE_WHEN_OFF_' + value);
+          return [];
+        },
+        engineering_isolate: () => this.engineering.isolate(this, value),
+        engineering_confirm_isolation: () => this.engineering.isolate(this, value, true),
+        engineering_confirm_return: () => this.engineering.confirmReturn(this, value),
+        engineering_breaker_off: () => {
+          if (![1, 2].includes(value) || !this.engineering.breakerOffRequired[value]) return ['Нет запроса отключить этот автомат'];
+          this.engineering.breakerOffRequired[value] = false; this.engineering.breakerOffConfirmed[value] = true; return [];
+        },
+      }; // Разрешённые локальные действия, без универсального сброса защит.
+      record.reasons = handlers[action] ? handlers[action]() : ['Неизвестная инженерная команда'];
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    }
+    else if (action === 'reset_flow_faults') {
+      if (value !== true || !this.stoppedConfirmed() || this.engineering.active) record.reasons.push('Нужны отдельное подтверждение и завершённый останов');
+      else if (this.signals.read('flow') === null || this.signals.read('pressure.before') === null || this.signals.read('pressure.after') === null) record.reasons.push('Нужны достоверные Q и оба давления, нулевой Q при OFF допустим (D-167)');
+      else {
+        this.protection.faults = this.protection.faults.filter(fault => !['FLOW_INSUFFICIENT', 'FLOW_RECOVERY_UNCONFIRMED'].includes(fault.code));
+        record.result = 'ACCEPTED'; // Требование полного следующего пуска и индивидуальные исключения сохранены.
+      }
+    }
     else if (action === 'start') {
       record.reasons = this.startReasons();
       if (!record.reasons.length) { this.beginStart('HMI'); record.result = 'ACCEPTED'; }
@@ -203,6 +263,9 @@ export class Simulation {
       if (!record.reasons.length) record.result = 'ACCEPTED';
     } else if (action === 'confirm_valve_closed') {
       record.reasons = this.pumps.confirmClosed(this, value);
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    } else if (action === 'confirm_valve_open') {
+      record.reasons = this.valves.confirm(this, value, 'OPEN');
       if (!record.reasons.length) record.result = 'ACCEPTED';
     } else if (action === 'confirm_pump_breaker_off') {
       record.reasons = this.pumps.confirmIsolation(this, value);
@@ -218,7 +281,8 @@ export class Simulation {
     } else if (action === 'mode') {
       this.changeMode(value, record);
     } else if (action === 'stop') {
-      record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
+      if (this.engineering.active) { this.engineering.stop(this); record.result = 'ACCEPTED'; }
+      else record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
     } else if (action === 'confirm_bypass_closed' && this.state === 'STARTING' && this.main.stage !== 'OPEN_ST') {
       this.main.bypassClosed = true;
       record.result = 'ACCEPTED';
@@ -248,6 +312,11 @@ export class Simulation {
           this.signals.read('cooling.required') !== false || this.signals.read('vfd.fault') !== false ||
           this.signals.read('vfd.exchange') !== true) {
         if (this.signals.read('grid.normal') === false) this.pumps.cancelClassificationForGrid(this);
+        if (this.engineering.active) {
+          this.engineering.stop(this, 'Утрата общего допуска (D-201); дальнейшая защитная реакция вне профиля');
+          // Снятие именно проверочных команд утверждено. Остальная реакция остаётся явным пробелом, без назначения новых выходов.
+          for (const pump of [1, 2]) { this.protection.emit(this, 'pump' + pump + '.run', false); this.protection.emit(this, 'valve' + pump + '.direction', 'STOP'); }
+        }
         this.gap('Полные реакции сети, температур, охлаждения или аварии/обмена ПЧ ещё не реализованы; выдача модели приостановлена');
         return;
       }
@@ -291,7 +360,7 @@ export class Simulation {
       flow: this.signals.flow(), dp: before !== null && after !== null ? this.hydraulics.values(this).dp : null,
       circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
       hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
-      selectedPump: this.selectedPump, pumpGroup: this.pumps, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
+      selectedPump: this.selectedPump, pumpGroup: this.pumps, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
   }
@@ -305,6 +374,7 @@ export class Simulation {
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },
       hydraulicWarning: this.hydraulics.warning, flowControl: this.config.flowControl, requireFullHydraulicStartup: this.hydraulics.requireFullStartup,
       pumpGroup: { selected: this.selectedPump, switching: this.pumps.active, branches: this.pumps.branches, emergencyCirculationRequested: this.pumps.emergencyCirculationRequested },
+      engineering: { enabled: this.engineering.enabled, active: this.engineering.active, results: this.engineering.results, returnRequired: this.engineering.returnRequired, breakerOffRequired: this.engineering.breakerOffRequired },
       arangaWarning: this.mode === 'ARANGA' && this.state === 'RUNNING' && !this.aranga.available(this), hmiWarning: !this.hmiAvailable() };
   }
 }

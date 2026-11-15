@@ -282,21 +282,26 @@ test('Старое HMI-подтверждение смены не перенос
   assert.equal(sim.outputs.value('pump1.run'), true);
 });
 
-test('Неперенесённая потеря открытия во время смены явно приостанавливает модель без повторного OPEN', () => {
+test('Потеря открытия во время смены: без повторного OPEN, после 5 с диагноз и явная граница обратного резервирования', () => {
   const sim = running(); // Уже подтверждённый целевой концевик пропал до окончания смены.
   sim.command('switch_pump', 2); openReserve(sim);
   sim.signals.set('valve2.open', false); sim.tick();
-  assert.ok(sim.coverageGap);
+  assert.equal(sim.coverageGap, null);
   assert.equal(sim.outputs.value('valve2.direction'), 'STOP');
   assert.equal(sim.selectedPump, 1);
+  sim.advance(5000);
+  assert.match(sim.coverageGap, /обратное резервирование/);
+  assert.ok(sim.pumps.branches[2].faults.includes('VALVE_LOST_OPEN_2'));
 });
 
-test('Неперенесённое 1/1 при смене не выдаётся за подтверждение закрытия или успех', () => {
+test('Обычное 1/1 при смене: не подтверждает закрытие; движение снимается после 5 с D-176', () => {
   const sim = running(); // Положение сразу неопределённо, продолжение этого сценария не заявлено реализованным.
   sim.command('switch_pump', 2); sim.signals.set('valve1.closed', true); sim.tick();
-  assert.ok(sim.coverageGap);
+  assert.equal(sim.coverageGap, null);
   assert.equal(sim.pumps.active.oldOff, false);
   assert.equal(sim.outputs.value('pump1.run'), true);
+  sim.sampleGroup('pump2On'); sim.advance(1000); sim.sampleGroup('valve2Open'); sim.advance(4000);
+  assert.equal(sim.outputs.value('valve1.direction'), 'STOP');
 });
 
 test('Низкое давление не теряет немедленный OFF из-за одновременно неизвестной фазной обратной связи', () => {
