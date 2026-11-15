@@ -13,6 +13,9 @@ export class Protection {
   startupHmiStop = false; // D-273/D-287: обнаруженная потеря HMI сохраняет приоритет охлаждения до закрытия ШТ.
   stopFrequencyRevision = 0; // Новая запись после прерывания запуска отдельно от прежнего регистра.
   frequencySource = 'STOP_COOLING'; // Источник частоты процедуры останова для HMI/экспорта.
+  stopIrreversible = false; // D-149 отменяется до ШБ; командный/иной обязательный останов — нет.
+  needsRestartContinue = false; // D-150: новое подтверждение ШБ и отдельное «Продолжить» после reboot.
+  restartContinued = false;
 
   elapsed(sim, name, active) { // sim — часы; name — таймер; active — достоверно выполненное условие.
     if (!active) { this.timers.delete(name); return 0; }
@@ -25,7 +28,10 @@ export class Protection {
     sim.log('FAULT', text, { code, evidence });
   }
   beginStop(sim, reason, kind = 'NORMAL') { // reason/kind — принятая причина; повтор не сбрасывает процедуру и её частотный приоритет.
-    if (sim.state === null || sim.state === 'STOPPED' || sim.state === 'STOPPING') return false;
+    const becameMandatory = kind !== 'PRESSURE' && !this.stopIrreversible;
+    if (['STARTING', 'RUNNING', 'STOPPING'].includes(sim.state) && kind !== 'PRESSURE') this.stopIrreversible = true; // Дополнительный Стоп во время давления также запрещает раннюю отмену.
+    if (sim.state === 'STOPPING') return becameMandatory;
+    if (sim.state === null || sim.state === 'STOPPED') return false;
     sim.procedureId += 1;
     sim.transition('STOPPING', reason);
     this.stopStage = 'WAIT_BYPASS';
@@ -36,7 +42,7 @@ export class Protection {
     this.startupHmiStop = kind === 'STARTUP_HMI';
     this.stopFrequencyRevision = sim.aranga.frequencyRevision;
     sim.stopReason = reason;
-    sim.log('PROMPT', 'Откройте ШБ и подтвердите. Принятый останов не отменяется (D-263/D-264)');
+    sim.log('PROMPT', 'Откройте ШБ и подтвердите.' + (kind === 'PRESSURE' && !this.stopIrreversible ? ' До подтверждения возможна ранняя отмена только причины давления (D-149)' : ' Принятый останов не отменяется'));
     return true;
   }
   checkCommunication(sim) {
@@ -62,7 +68,9 @@ export class Protection {
       }
       request['vfd.frequency'] = sim.frequency.apply(frequency);
     }
-    if (this.stopStage === 'WAIT_BYPASS' && this.bypassOpen) this.stopStage = 'CLOSE_ST';
+    if (this.stopStage === 'WAIT_BYPASS' && this.bypassOpen && (!this.needsRestartContinue || this.restartContinued)) {
+      this.stopStage = 'CLOSE_ST'; this.stopIrreversible = true;
+    }
     if (this.stopStage === 'CLOSE_ST') {
       request['st.direction'] = this.stBlocked ? 'STOP' : 'CLOSE';
       if (sim.signals.position('st') === 'CLOSED' || (this.stBlocked && this.manualStClosed)) {
@@ -146,19 +154,20 @@ export class Protection {
     if (sim.state === null) {
       // D-162: только известные команды инициализации ШТ; другим механизмам общий OFF не изобретается.
       this.emit(sim, 'st.direction', 'STOP');
-      this.emit(sim, 'st.power', false);
+      this.emit(sim, 'st.power', sim.boot.stPower(sim));
+      const initial = sim.boot.initialRequests(sim); // Только определённые текущими входами запросы модели восстановления.
+      for (const [name, value] of Object.entries(initial)) this.emit(sim, name, value);
+      sim.request = { ...sim.request, ...initial, 'st.direction': 'STOP', 'st.power': sim.boot.stPower(sim) };
+      sim.boot.restoreState(sim);
       this.lastCycleAt = sim.clock.now;
       return;
     }
     const request = { ...sim.request }; // Итоговые запросы после локальных приоритетов.
     const p1 = sim.signals.read('pressure.before'); // Достоверное абсолютное давление до НГ или null.
     const p2 = sim.signals.read('pressure.after'); // Достоверное абсолютное давление после НГ или null.
-    const low = (p1 !== null && p1 < 0.8) || (p2 !== null && p2 < 0.8); // D-065: немедленное отключение насосов.
-    const noPressure = p1 === null && p2 === null; // D-066/D-148: отсутствие контроля, а не нулевое давление.
-    if (low || noPressure) {
-      this.fault(sim, low ? 'LOW_PRESSURE' : 'NO_PRESSURE_DATA', low ? 'Низкое давление: насосы OFF' : 'Нет контроля давления: насосы OFF', low ? 'CONFIRMED' : 'NO_FEEDBACK');
-      this.beginStop(sim, 'Защита давления: обязательный останов');
-    }
+    sim.pressure.update(sim);
+    const low = sim.pressure.trip; // Включая гистерезис и ожидание обоих каналов после их потери.
+    const noPressure = sim.pressure.missingBoth;
     if (sim.signals.read('emergency') === true) this.beginStop(sim, 'Кнопка Авария');
     sim.pumps.diagnose(sim, request, low || noPressure); // D-142: 1 с снятия ON + отдельные 2 с классификации.
     sim.valves.monitor(sim, request, low || noPressure);
@@ -194,11 +203,13 @@ export class Protection {
         sim.clock.now - runningCommand.deliveredAt >= 10000 && sim.signals.read('vfd.running') !== true) {
       sim.gap('Пуск ПЧ не подтверждён за 10 с: процедура сбросов и блокировок ещё не реализована');
     }
-    if ((low || noPressure) && sim.pumps.active) { // Прерванная защитой давления смена не даёт нового ON при возвращении давления.
+    if ((low || noPressure) && sim.pumps.active) { // Прежняя смена не возобновляется; раннее восстановление возможно только через отдельный допуск D-149.
       sim.pumps.history = { ...sim.pumps.active, stage: 'PRESSURE_INTERRUPTED' };
       sim.pumps.active = null;
     }
     sim.pumps.step(sim, request); // Продолжаем уже принятую смену до заключительного насосного останова.
+    sim.pressure.tryEarly(sim); // После независимых причин, до формирования запросов восстановления.
+    sim.boot.maybeCirculate(sim);
     sim.recovery.step(sim, request, low || noPressure);
     sim.engineering.step(sim, request, low || noPressure); // Только запросы проверки, самостоятельные защиты остаются старше.
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);
@@ -237,6 +248,7 @@ export class Protection {
       // D-028/D-169: выдача положений останова завершает процедуру; достижения этих положений не ждём.
       this.stopStage = 'COMPLETE';
       sim.transition('STOPPED', 'Останов завершён: насосы OFF, положения останова выданы. Физические подтверждения отображаются отдельно');
+      sim.pressure.completed(sim);
     }
     this.lastCycleAt = sim.clock.now;
   }

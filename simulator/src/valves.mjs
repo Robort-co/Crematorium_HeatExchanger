@@ -14,7 +14,14 @@ export class PumpValves {
     return sim.signals.position('valve' + pump) === 'OPEN' || branch.manualOpen === 'RUN';
   }
   requestManual(sim, pump, target, source, timeout = 60000) {
-    if (this.waits[pump]) return; // Повтор сообщения/окна не начинает новые 60 с.
+    const saved = this.waits[pump];
+    if (saved?.suspended && saved.target === target) {
+      saved.suspended = false; saved.updatedAt = sim.clock.now; saved.source = source;
+      sim.log('MANUAL_WAIT_RESUMED', 'Текущему этапу вновь нужно ' + target + ' затвора ' + pump + '; продолжается сохранённый остаток D-257');
+      return;
+    }
+    if (saved && !saved.suspended) return; // Повтор сообщения/окна не начинает новые 60 с.
+    if (saved) delete this.waits[pump]; // Нынешняя цель другая: старое задание не восстанавливается D-257.
     const branch = sim.pumps.branches[pump];
     branch.valveBlocked = true;
     if (target === 'OPEN') branch.manualClosed = false;

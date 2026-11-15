@@ -2,6 +2,53 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSimulatorServer } from '../server.mjs';
 
+test('HTTP 0.7: reboot из запуска, новые входы, отдельные ШБ/Продолжить; старые поколения и контексты отвергаются', async () => {
+  const { server } = createSimulatorServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let snapshot = await (await fetch(base + '/api/state')).json();
+  const act = async (data, status = 200) => {
+    const response = await fetch(base + '/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ generation: snapshot.generation, procedureId: snapshot.procedureId, ...data }) });
+    assert.equal(response.status, status); if (status === 200) snapshot = await response.json();
+  };
+  try {
+    await act({ type: 'fixture' }); await act({ type: 'command', action: 'start' });
+    const previousGeneration = snapshot.generation;
+    await act({ type: 'restart', downtimeMs: 120000 }); assert.equal(snapshot.state, null);
+    assert.equal(snapshot.boot.storage, 'MEMORY_SIMULATION_ONLY');
+    await act({ type: 'command', action: 'confirm_bypass_open', generation: previousGeneration }, 400);
+    for (const name of ['bootPermits', 'flowZero', 'pumpsOff', 'fanOff', 'stClosed']) await act({ type: 'group', name });
+    await act({ type: 'deliver_all' }); await act({ type: 'group', name: 'fanOff' }); await act({ type: 'advance', ms: 5000 });
+    assert.equal(snapshot.state, 'STOPPING'); assert.equal(snapshot.needsRestartContinue, true); assert.equal(snapshot.outputs['pump1.run'].value, false);
+    await act({ type: 'command', action: 'continue_stop_after_restart' }); assert.equal(snapshot.lastRequest.result, 'REJECTED');
+    await act({ type: 'command', action: 'confirm_bypass_open' }); assert.equal(snapshot.state, 'STOPPING');
+    await act({ type: 'command', action: 'continue_stop_after_restart' }); assert.equal(snapshot.state, 'STOPPED');
+    assert.equal(snapshot.coverageGap, null); assert.equal(snapshot.outputs['vfd.run'].value, 'STOP');
+    const html = await (await fetch(base + '/')).text();
+    assert.match(html, /id="continue-restart"/); assert.match(html, /id="reset-pressure"/);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('HTTP 0.7: раздельная блокировка давления после остановленного запуска и отдельный сброс', async () => {
+  const { server } = createSimulatorServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let snapshot = await (await fetch(base + '/api/state')).json();
+  const act = async data => {
+    const response = await fetch(base + '/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ generation: snapshot.generation, procedureId: snapshot.procedureId, ...data }) });
+    assert.equal(response.status, 200); snapshot = await response.json();
+  };
+  try {
+    await act({ type: 'fixture' }); await act({ type: 'command', action: 'start' });
+    await act({ type: 'signal', name: 'pressure.before', value: 0, quality: 'GOOD' });
+    assert.equal(snapshot.state, 'STOPPING'); assert.equal(snapshot.pressure.lowTrip, true); assert.equal(snapshot.pressure.lowAlarm, false);
+    await act({ type: 'command', action: 'confirm_bypass_open' }); assert.equal(snapshot.state, 'STOPPED');
+    assert.equal(snapshot.pressure.restartBlocked, true);
+    await act({ type: 'group', name: 'flowZero' });
+    await act({ type: 'command', action: 'start' }); assert.equal(snapshot.lastRequest.result, 'REJECTED');
+    await act({ type: 'command', action: 'reset_pressure_stop', value: true }); assert.equal(snapshot.lastRequest.result, 'ACCEPTED');
+    assert.equal(snapshot.state, 'STOPPED'); assert.equal(snapshot.outputs['pump1.run'].value, false);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
 test('HTTP: D-112/D-171 и согласованный D-177 через локальные действия, без обхода поколения и контекста', async () => {
   const { server } = createSimulatorServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

@@ -2,11 +2,17 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.6 · восстановление и проверка ветви</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.7 · давление и перезагрузка</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
 <div id="gap" role="alert" hidden></div>
+<section class="panel">
+  <h2>Давление и восстановление</h2>
+  <p id="pressure-state" role="status"></p><p id="boot-state" role="status"></p>
+  <div class="buttons"><button id="reset-pressure">Отдельный сброс завершённого останова по давлению</button><button id="continue-restart">Продолжить останов после перезагрузки</button></div>
+  <p class="hint">Немедленное отключение и сигнализация после 3 с различаются. Кнопка перезапуска имитирует сохранение только в памяти Node.js: закрытие процесса теряет снимок. После перезапуска нужны новые входы и отдельные подтверждения; старые DI и команды не доказывают текущее состояние.</p>
+</section>
 <section class="panel">
   <h2>Режим и источник задания</h2>
   <div class="buttons"><label>Режим <select id="mode"><option value="MANUAL">Ручной</option><option value="ARANGA">Сквозной ARANGA</option></select></label><button id="set-mode">Выбрать режим</button></div>

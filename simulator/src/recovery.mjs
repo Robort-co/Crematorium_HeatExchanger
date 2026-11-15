@@ -1,25 +1,37 @@
 /** Специальное восстановление D-111/D-112/D-171 после отдельно полученного допуска.
- * Не является обходом первоначального пуска D-139 и не решает условия отмены защиты D-149.
- * Источник допуска в текущем профиле — явно подписанная тестовая исходная точка.
+ * Допуск дают PressureProtection (D-149), RebootRecovery (D-080/D-150) либо явно подписанная тестовая точка.
+ * Обычный пуск D-139 обхода не получает; после reboot успешная циркуляция не переводит ТО в RUNNING.
  */
 export class PumpRecovery {
   active = null;
   history = null;
-  begin(sim, selected) {
-    this.active = { stage: 'CLOSE_VALVES', selected, target: null, closeAt: {}, failed: [], onAt: null, openedAt: null };
-    sim.main.stage = 'RECOVERY';
+  begin(sim, selected, context = 'PRESSURE_OR_FIXTURE') {
+    this.active = { context, stage: context !== 'REBOOT' && sim.signals.position('st') !== 'OPEN' ? 'WAIT_ST_OPEN' : 'CLOSE_VALVES', selected, target: null, closeAt: {}, failed: [], onAt: null, openedAt: null };
+    if (context !== 'REBOOT') sim.main.stage = 'RECOVERY';
     sim.procedureId += 1;
   }
   owns(pump) { return !!this.active && [1, 2].includes(pump); }
   step(sim, request, pressureTrip) {
     const op = this.active;
     if (!op) return;
-    if (pressureTrip || sim.state !== 'STARTING' || sim.pumps.groupFault) {
+    const reboot = op.context === 'REBOOT';
+    if (pressureTrip || sim.state !== (reboot ? 'STOPPING' : 'STARTING') || sim.pumps.groupFault ||
+        (reboot && (['CLOSE_PUMP', 'FINAL_OUTPUTS', 'COMPLETE'].includes(sim.protection.stopStage) || (op.target === null && sim.protection.restartContinued)))) {
       this.history = { ...op, stage: 'INTERRUPTED' };
       this.active = null; // Принятый останов не отменяется поздним концевиком/ручным подтверждением.
       return;
     }
-    request['st.direction'] = 'STOP';
+    if (!reboot) request['st.direction'] = 'STOP'; // В восстановлении после reboot запрос ШТ принадлежит отдельному продолжению останова.
+    if (!reboot && op.stage === 'WAIT_ST_OPEN') {
+      request['pump1.run'] = false; request['pump2.run'] = false;
+      request['st.direction'] = 'OPEN'; // Продолжение ещё не законченного начального открытия, без обхода допуска ШТ.
+      if (sim.signals.position('st') !== 'OPEN') return;
+      request['st.direction'] = 'STOP'; op.stage = 'CLOSE_VALVES';
+    }
+    if (!reboot) {
+      request['vfd.enable'] = true; request['vfd.run'] = 'START';
+      request['vfd.frequency'] = sim.frequency.apply(sim.config.fmin);
+    }
     if (op.stage === 'CLOSE_VALVES') {
       for (const pump of [1, 2]) {
         const branch = sim.pumps.branches[pump];
@@ -67,12 +79,20 @@ export class PumpRecovery {
             if (criterion.state === 'LOW') {
               this.history = { ...op, stage: 'LOW_CIRCULATION' }; this.active = null;
               sim.hydraulics.reserve(sim, 'HYDRAULIC_LOW', pump);
+              if (reboot && !sim.pumps.groupFault) sim.gap('После reboot циркуляция первой ветви не подтверждена: смена при сохранённом STOPPING ещё не перенесена');
             } else if (criterion.state === 'OK' && sim.signals.phases(pump)?.every(Boolean) &&
+                (reboot || sim.main.bypassClosed) && // D-030: давление при первоначальном запуске не заменяет подтверждение ШБ закрыт.
+                (reboot || (sim.outputs.commands['vfd.run']?.delivery === 'ACCEPTED' && sim.signals.read('vfd.running') === true && sim.signals.get('vfd.running').lastGoodRevision > sim.outputs.commands['vfd.run'].deliveryInputRevision)) &&
                 op.failed.every(index => sim.pumps.branches[index].manualClosed || sim.signals.position('valve' + index) === 'CLOSED')) {
               sim.hydraulics.warn(null);
               this.history = { ...op, stage: 'COMPLETE' }; this.active = null;
-              sim.main.stage = 'COMPLETE'; sim.main.preparationDone = true;
-              sim.transition('RUNNING', 'Специальное восстановление: циркуляция и изоляция ветвей подтверждены (D-112)');
+              if (reboot) {
+                sim.boot.circulationRestored = true;
+                sim.log('BOOT_CIRCULATION', 'Циркуляция восстановлена, состояние остаётся STOPPING; требуются ШБ и отдельное продолжение');
+              } else {
+                sim.main.stage = 'COMPLETE'; sim.main.preparationDone = true;
+                sim.transition('RUNNING', 'Специальное восстановление: циркуляция и изоляция ветвей подтверждены (D-112)');
+              }
             } else sim.hydraulics.warn('Специальное восстановление: требуется циркуляция и подтверждение закрытия неисправной ветви');
           }
         } else if (op.openedAt !== null) sim.gap('Специальное восстановление: потеря уже подтверждённого открытия до окончания процедуры ещё не перенесена');

@@ -10,9 +10,12 @@ import { HydraulicControl } from './hydraulics.mjs';
 import { PumpValves } from './valves.mjs';
 import { Engineering } from './engineering.mjs';
 import { PumpRecovery } from './recovery.mjs';
+import { PressureProtection } from './pressure.mjs';
+import { RebootRecovery } from './reboot.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
+  bootPermits: { label: 'Имитировать: общие условия нормальны, охлаждение не требуется', values: { 'grid.normal': true, 'temperature.normal': true, 'configuration.ready': true, 'vfd.exchange': true, 'vfd.fault': false, 'emergency': false, 'cooling.required': false } },
   stOpen: { label: 'Имитировать: ШТ открыт', values: { 'st.open': true, 'st.closed': false } },
   stClosed: { label: 'Имитировать: ШТ закрыт', values: { 'st.open': false, 'st.closed': true } },
   valvesClosed: { label: 'Имитировать: оба затвора закрыты', values: { 'valve1.open': false, 'valve1.closed': true, 'valve2.open': false, 'valve2.closed': true } },
@@ -55,6 +58,8 @@ export class Simulation {
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
     this.recovery = new PumpRecovery(); // Только специальный допуск D-112; обычный пуск его не получает.
+    this.pressure = new PressureProtection();
+    this.boot = new RebootRecovery();
     this.hydraulics = new HydraulicControl(); // Матрица пусковых/рабочих критериев без подстановки отсутствующих Q/ΔP.
     this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
     this.valves = new PumpValves(); // Позиционная диагностика и ручные ожидания, отдельно от физических входов.
@@ -123,7 +128,12 @@ export class Simulation {
     this.log('ASSUMPTION', 'D-112: допустимость раннего восстановления, открытый ШТ, работающий ПЧ и закрытый ШБ заданы испытателем. Полная отмена защиты D-149 здесь не проверяется');
     this.tick();
   }
-  restart() {
+  restart({ downtimeMs = 0, savedStateReadable = true } = {}) {
+    if (!Number.isFinite(downtimeMs) || downtimeMs < 0 || downtimeMs > 86400000 || typeof savedStateReadable !== 'boolean') throw new Error('Некорректные условия имитации reboot');
+    const savedState = this.state ?? (this.boot.readable ? this.boot.savedState : null); // Повторный reboot не превращает непрочитанный снимок в достоверный.
+    const savedPressure = structuredClone(this.pressure);
+    const savedSelected = this.selectedPump;
+    const savedConfig = structuredClone(this.config);
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
     const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
@@ -139,7 +149,14 @@ export class Simulation {
       const remaining = Math.max(0, 60000 - (this.clock.now - operation.manualRequestedAt)); // Без времени отсутствия питания/загрузки D-257.
       savedWaits[operation.from] = { target: 'CLOSED', source: 'SWITCH_CLOSE', remaining, expired: remaining === 0 };
     }
+    this.clock.advance(downtimeMs); // Только заданный испытателем простой; таймеры ручного ожидания в это время не идут.
     this.resetRuntime();
+    this.boot.begin(savedState, savedStateReadable);
+    if (!savedStateReadable) { this.log('RESTART', 'Имитируется непрочитанный снимок: состояние и блокировки неизвестны, автоматика восстановления запрещена'); this.tick(); return; }
+    Object.assign(this.pressure, savedPressure);
+    this.pressure.resumeFrom = null; // D-150: reboot запрещает возврат к ранней отмене давления.
+    Object.assign(this.config, savedConfig);
+    this.selectedPump = savedSelected;
     this.config.flowControl = savedFlowControl;
     this.hydraulics.requireFullStartup = savedFullStartup;
     this.pumps.branches = savedBranches;
@@ -157,7 +174,7 @@ export class Simulation {
       if (operation.kind !== 'pump' && operation.repair) this.engineering.breakerOffRequired[operation.pump] = true;
     }
     this.valves.waits = savedWaits;
-    for (const wait of Object.values(this.valves.waits)) { wait.suspended = true; wait.updatedAt = this.clock.now; } // Полное восстановление технологического этапа пока не реализовано: остаток не запускает движение.
+    for (const wait of Object.values(this.valves.waits)) { wait.suspended = true; wait.updatedAt = this.clock.now; } // D-257: возобновление только когда текущий этап снова запросит эту цель.
     for (const branch of Object.values(this.pumps.branches)) { // branch — сохраняемые ошибки; временные подтверждения отменяются.
       branch.classificationAt = null; branch.manualClosed = false; branch.manualOpen = false; branch.isolationConfirmed = false;
     }
@@ -165,7 +182,7 @@ export class Simulation {
     this.protection.stBlocked = savedStBlock;
     this.mode = savedMode;
     this.manualFrequency = savedManualFrequency;
-    this.log('RESTART', 'Достоверного восстановления нет: состояние и выходы неизвестны. Реальная NV-процедура не реализована');
+    this.log('RESTART', 'Снимок сохранён только в памяти процесса. Старые DI/команды не восстановлены как текущие; ожидаются новые подтверждения. Реальной NV нет');
     this.tick();
   }
   hmiAvailable() { return this.lastHmiAt !== null && this.clock.now - this.lastHmiAt < 5000; }
@@ -204,6 +221,7 @@ export class Simulation {
       if (pressure === null || pressure < 0.8 || pressure > 2.8) reasons.push('Давление не разрешает пуск: ' + name);
     }
     if (this.protection.faults.length || this.protection.stBlocked) reasons.push('Сохраняются неисправности/блокировки');
+    if (this.pressure.restartBlocked || this.pressure.stopPending || this.pressure.trip || this.pressure.highAlarm) reasons.push('Нет разрешения защиты давления');
     if (Object.values(this.pumps.branches).some(branch => branch.exclusions.length)) reasons.push('Не возвращена исключённая для проверки насосная ветвь (D-167)');
     if (this.coverageGap) reasons.push('Модель на паузе вне реализованной области');
     if (source === 'HMI' && this.mode !== 'MANUAL') reasons.push('Сквозной режим: новый Пуск только от ARANGA');
@@ -213,6 +231,8 @@ export class Simulation {
     return reasons;
   }
   beginStart(source) { // source — уже проверенный источник команды; подготовка механизмов общая.
+    this.protection.stopIrreversible = false;
+    this.protection.needsRestartContinue = false; this.protection.restartContinued = false;
     this.procedureId += 1;
     this.aranga.beginStartup(this);
     this.main.start();
@@ -266,6 +286,10 @@ export class Simulation {
       record.reasons = handlers[action] ? handlers[action]() : ['Неизвестная инженерная команда'];
       if (!record.reasons.length) record.result = 'ACCEPTED';
     }
+    else if (action === 'reset_pressure_stop') {
+      record.reasons = this.pressure.reset(this, value);
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    }
     else if (action === 'reset_pump_group') {
       record.reasons = this.pumps.resetGroup(this, value);
       if (!record.reasons.length) record.result = 'ACCEPTED';
@@ -306,6 +330,9 @@ export class Simulation {
     } else if (action === 'stop') {
       if (this.engineering.active) { this.engineering.stop(this); record.result = 'ACCEPTED'; }
       else record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
+    } else if (action === 'continue_stop_after_restart') {
+      if (this.state !== 'STOPPING' || !this.protection.needsRestartContinue || !this.protection.bypassOpen || this.protection.stopStage !== 'WAIT_BYPASS') record.reasons.push('Нужно актуальное подтверждение ШБ открыт после reboot и незавершённый останов');
+      else { this.protection.restartContinued = true; this.protection.stopIrreversible = true; record.result = 'ACCEPTED'; }
     } else if (action === 'confirm_bypass_closed' && this.state === 'STARTING' && this.main.stage !== 'OPEN_ST') {
       this.main.bypassClosed = true;
       record.result = 'ACCEPTED';
@@ -381,7 +408,9 @@ export class Simulation {
       requests: this.outputs.requests, outputs: this.outputs.commands,
       positions: { st: this.signals.position('st'), valve1: this.signals.position('valve1'), valve2: this.signals.position('valve2') },
       flow: this.signals.flow(), dp: before !== null && after !== null ? this.hydraulics.values(this).dp : null,
-      circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
+      circulation: this.circulation(), faults: this.protection.faults, pressure: this.pressure, boot: this.boot,
+      needsRestartContinue: this.protection.needsRestartContinue, restartContinued: this.protection.restartContinued,
+      stopIrreversible: this.protection.stopIrreversible, stBlocked: this.protection.stBlocked,
       hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
       selectedPump: this.selectedPump, pumpGroup: this.pumps, recovery: this.recovery, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
@@ -392,6 +421,9 @@ export class Simulation {
     const reasons = this.startReasons('ARANGA'); // Готовность именно к дистанционному Пуску, D-301/D-303.
     return { state: this.state, stateKnown: this.stateKnown, mode: this.mode, ready: reasons.length === 0,
       notReadyReasons: reasons, alarm: this.protection.faults.length > 0, errors: this.protection.faults,
+      pressure: { lowTrip: this.pressure.lowTrip, lowAlarm: this.pressure.lowAlarm, highAlarm: this.pressure.highAlarm,
+        missingBoth: this.pressure.missingBoth, requireBoth: this.pressure.requireBoth, restartBlocked: this.pressure.restartBlocked, stopCauses: this.pressure.stopCauses },
+      recoveryAfterRestart: { phase: this.boot.phase, storage: this.boot.storage, needsContinue: this.protection.needsRestartContinue && !this.protection.restartContinued },
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },

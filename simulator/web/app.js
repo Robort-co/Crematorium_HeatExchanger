@@ -69,6 +69,15 @@ function render() {
     element('confirm-breaker-' + pump).disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap;
   }
   element('state').textContent = stateLabels[snapshot.state] ?? 'Неизвестно после загрузки';
+  const pressure = snapshot.pressure;
+  element('pressure-state').textContent = 'Давление: запрет насосов — ' + text(pressure.lowTrip || pressure.missingBoth || pressure.requireBoth) +
+    '; сигнализация низкого/высокого — ' + text(pressure.lowAlarm) + '/' + text(pressure.highAlarm) +
+    '; блокировка после останова — ' + text(pressure.restartBlocked) + (pressure.resumeReasons.length ? '. Возобновление: ' + pressure.resumeReasons.join('; ') : '');
+  element('boot-state').textContent = snapshot.boot.phase === 'INACTIVE' ? 'Перезапуск в этом тестовом мире не выполнялся.' :
+    'Имитация памяти, не реальная NV. Восстановление: ' + snapshot.boot.phase + (snapshot.boot.reasons.length ? ' · ' + snapshot.boot.reasons.join('; ') : '');
+  element('reset-pressure').disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || !pressure.restartBlocked || !snapshot.stoppedConfirmed;
+  element('continue-restart').hidden = !snapshot.needsRestartContinue || snapshot.restartContinued || snapshot.state !== 'STOPPING';
+  element('continue-restart').disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || !snapshot.bypassOpen;
   element('stage').textContent = stageLabels[snapshot.stage] ?? snapshot.stage;
   element('time').textContent = seconds(snapshot.time) + ' с';
   element('physical').textContent = snapshot.stoppedConfirmed ? 'Подтверждён входами' : 'Не подтверждён';
@@ -76,7 +85,7 @@ function render() {
   element('gap').hidden = !snapshot.coverageGap;
   element('gap').textContent = 'ПАУЗА МОДЕЛИ: ' + (snapshot.coverageGap ?? '') + '. Состояние исполнения выходов за этой границей не моделируется. Для нового прогона загрузите исходную точку.';
   element('start').disabled = snapshot.startReasons.length > 0;
-  element('stop').disabled = !snapshot.hmiAvailable || !['STARTING', 'RUNNING'].includes(snapshot.state) || !!snapshot.coverageGap;
+  element('stop').disabled = !snapshot.hmiAvailable || (!['STARTING', 'RUNNING'].includes(snapshot.state) && !(snapshot.state === 'STOPPING' && !snapshot.stopIrreversible)) || !!snapshot.coverageGap;
   const canSetFrequency = snapshot.state === 'RUNNING' && snapshot.hmiAvailable && !snapshot.coverageGap && (snapshot.mode === 'MANUAL' || snapshot.aranga.holding); // Местная корректировка не отбирает нормальное сквозное управление.
   element('set-frequency').disabled = !canSetFrequency;
   element('frequency-minus').disabled = !canSetFrequency;
@@ -169,7 +178,7 @@ function renderEngineering() {
     const action = actions[Number(button.dataset.engineering)];
     button.onclick = () => act({ type: 'command', action: action.action, value: action.repair ? { ...action.value, repaired: element('engineering-repaired').checked } : action.value });
   });
-  element('valve-waits').innerHTML = Object.entries(snapshot.valves.waits).map(([pump, wait]) => '<span>Затвор ' + pump + ': ' + escaped(wait.target === 'OPEN' ? 'проверить открытие' : 'закрыть и проверить') + (wait.remaining === null ? ' · таймаут не назначен' : ', осталось ' + seconds(wait.remaining) + ' с') + (wait.suspended ? ' · сохранено, восстановление этапа не реализовано' : '') + '</span>' + (wait.target === 'OPEN' && !wait.suspended ? '<button data-open="' + pump + '">Привод ' + pump + ' обесточен, полное открытие проверено</button>' : '')).join('');
+  element('valve-waits').innerHTML = Object.entries(snapshot.valves.waits).map(([pump, wait]) => '<span>Затвор ' + pump + ': ' + escaped(wait.target === 'OPEN' ? 'проверить открытие' : 'закрыть и проверить') + (wait.remaining === null ? ' · таймаут не назначен' : ', осталось ' + seconds(wait.remaining) + ' с') + (wait.suspended ? ' · сохранено до актуального задания текущего этапа' : '') + '</span>' + (wait.target === 'OPEN' && !wait.suspended ? '<button data-open="' + pump + '">Привод ' + pump + ' обесточен, полное открытие проверено</button>' : '')).join('');
   element('valve-waits').querySelectorAll('button').forEach(button => { button.disabled = blocked; button.onclick = () => act({ type: 'command', action: 'confirm_valve_open', value: Number(button.dataset.open) }); });
 }
 
@@ -186,6 +195,8 @@ element('reset-flow').onclick = () => act({ type: 'command', action: 'reset_flow
 element('fixture').onclick = () => act({ type: 'fixture' });
 element('recovery-fixture').onclick = () => act({ type: 'recovery_fixture', pump: 1 });
 element('restart').onclick = () => act({ type: 'restart' });
+element('reset-pressure').onclick = () => act({ type: 'command', action: 'reset_pressure_stop', value: true });
+element('continue-restart').onclick = () => act({ type: 'command', action: 'continue_stop_after_restart' });
 element('start').onclick = () => act({ type: 'command', action: 'start' });
 element('stop').onclick = () => act({ type: 'command', action: 'stop' });
 element('bypass-closed').onclick = () => act({ type: 'command', action: 'confirm_bypass_closed' });

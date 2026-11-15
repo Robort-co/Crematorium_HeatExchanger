@@ -27,7 +27,7 @@ export function createSimulatorServer() {
         if (data.generation !== sim.generation) throw new Error('Устаревшее окно: обновите состояние, команда не выполнена');
         if (data.type === 'fixture') sim.loadFixture();
         else if (data.type === 'recovery_fixture') sim.loadRecoveryFixture(data.pump);
-        else if (data.type === 'restart') sim.restart();
+        else if (data.type === 'restart') sim.restart({ downtimeMs: data.downtimeMs, savedStateReadable: data.savedStateReadable });
         else if (data.type === 'advance') sim.advance(data.ms);
         else if (data.type === 'aranga') sim.arangaOperation(data.operation, data.payload);
         else if (data.type === 'command') {
