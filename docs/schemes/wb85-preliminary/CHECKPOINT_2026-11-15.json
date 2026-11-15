@@ -1,0 +1,208 @@
+{
+  "date": "2026-11-15",
+  "scope": "docs/schemes/wb85-preliminary only",
+  "document_status": "Preliminary functional scheme and candidate equipment selection; not a verified electrical or installation design",
+  "base_commit_at_audit": "3a500136b50f0bec94082cade929857a7c4bcb97",
+  "excluded_temporary_files": [
+    "~$cabinet-specification.xlsx"
+  ],
+  "confirmed_session_constraints": [
+    "separate enclosure for UPS and batteries",
+    "control and ST actuator autonomy at least 30 minutes",
+    "no simulator changes",
+    "ordinary scoped commit and push authorized for session close only"
+  ],
+  "unapproved_candidates": [
+    "cabinet and UPS models",
+    "protection device ratings",
+    "six additional interface relays",
+    "HMI hardware",
+    "terminal counts and installation clearances"
+  ],
+  "whitespace_review": {
+    "crlf_preserved": true,
+    "manufacturer_svg_trailing_space_warnings": 16,
+    "manufacturer_bytes_preserved": true,
+    "project_document_warnings": 0
+  },
+  "checks": {
+    "drawio_pages": [
+      {
+        "name": "Общая структура",
+        "cells": 129,
+        "edges": 12
+      },
+      {
+        "name": "Сигналы и механизмы",
+        "cells": 217,
+        "edges": 15
+      },
+      {
+        "name": "Внешний вид · WB8.5 и дискретные модули",
+        "cells": 105,
+        "edges": 8
+      },
+      {
+        "name": "Внешний вид · аналоговые модули",
+        "cells": 57,
+        "edges": 7
+      },
+      {
+        "name": "Габариты · место на DIN-рейке",
+        "cells": 111,
+        "edges": 7
+      },
+      {
+        "name": "Предварительная компоновка · основной щит",
+        "cells": 210,
+        "edges": 2
+      },
+      {
+        "name": "Отдельный ИБП · дверная зона · оценка запаса",
+        "cells": 95,
+        "edges": 2
+      }
+    ],
+    "svg_xml_files": 12,
+    "diagram_changes": "two status subtitles only, verified against pre-close hashes",
+    "xlsx_sheets": [
+      "Спецификация",
+      "WB к заказу",
+      "Место в щите"
+    ],
+    "bom_rows": 59,
+    "formula_count": 56,
+    "cached_formula_errors": [],
+    "wb_full_count": 9,
+    "rail_capacity_mm": 3680,
+    "rail_used_mm": 3051,
+    "rail_free_mm": 629,
+    "local_links": "valid",
+    "secret_pattern_findings": [],
+    "xlsx_macros_external_links": false,
+    "temporary_files_in_scope": false
+  },
+  "limits": [
+    "No real equipment connected or tested",
+    "No native Excel or electrical CAD certification claimed",
+    "Historical sheets 6-7 retain old placement; new selection still requires geometric and thermal validation",
+    "Pattern scan is not proof against every possible secret"
+  ],
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 84,
+      "sha256": "ca5d5da8034613aa230975024a5ccbaedcaaa2156b30d4ea3e9d529a4c72ff63"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 82,
+      "sha256": "b9c05c13ea53d88050c0263f4712126797244183fd9e23609bcedca81c1f0c4c"
+    },
+    {
+      "path": "01-structure.svg",
+      "bytes": 21512,
+      "sha256": "05b622c250935cbd7307da3391ae7d5c0f34a6a9b46ffeb7fabc8ac5b7148e98"
+    },
+    {
+      "path": "02-signals.svg",
+      "bytes": 32613,
+      "sha256": "90acbe91ebc5ab622a1e2210f575b87199cb08ec66ff53561ee14eceb51ca9eb"
+    },
+    {
+      "path": "03-physical-wb.svg",
+      "bytes": 2203722,
+      "sha256": "507d2e0f5e319b8de1770eb6192a96da16e372fa88d5fd733b56dfe54d716541"
+    },
+    {
+      "path": "04-physical-analog.svg",
+      "bytes": 643433,
+      "sha256": "b42cc62d7fc0c3b75af8222b980b8f2a53eb2c25ade9c11eb1eef5c89130f59e"
+    },
+    {
+      "path": "05-dimensions.svg",
+      "bytes": 1678714,
+      "sha256": "51187380c00f8bfdcb6a70cca0fc90be69934c221f1ac30297447ca79279c6a1"
+    },
+    {
+      "path": "06-cabinet-main.svg",
+      "bytes": 1691898,
+      "sha256": "a0f6731e186fef8df45b54be8fc97a942859c473631bd8b122ed28c1ecd828e8"
+    },
+    {
+      "path": "07-cabinet-ups.svg",
+      "bytes": 18266,
+      "sha256": "63cb6021c4ee3137516349d424fedfc05e4edb1291c8396ba94fbe25145776a3"
+    },
+    {
+      "path": "CABINET_LAYOUT.md",
+      "bytes": 26775,
+      "sha256": "1ee61789801ca167b216f64b8fccd5f54a046950dfeb796e427d49aca3a57c58"
+    },
+    {
+      "path": "CABINET_SPECIFICATION.md",
+      "bytes": 52271,
+      "sha256": "84b052587cb9031655b3872581b00125fa745347fcbd78a1e8310daaee7e7fcb"
+    },
+    {
+      "path": "README.md",
+      "bytes": 47064,
+      "sha256": "a60816a2562ed2d14fe9c969cf387ec7eff39f9edd9637be67773bac5539228b"
+    },
+    {
+      "path": "SESSION_SUMMARY_2026-11-15.md",
+      "bytes": 16768,
+      "sha256": "de7c2fc8f0a7cbdeec5a200f7f9a28da5ec55df33c9ff6efef98b71da6def656"
+    },
+    {
+      "path": "WB_ORDER.md",
+      "bytes": 6608,
+      "sha256": "57fbb1af123611ccf40bc661f72042383f0b0d8be7659f10dc681a59ee823f92"
+    },
+    {
+      "path": "assets/vendor/README.md",
+      "bytes": 3476,
+      "sha256": "d94f22c10e252f5e92d00ee15d8390eea6a7489f0c9d892a4b38a46f3a2e01ff"
+    },
+    {
+      "path": "assets/vendor/di14.svg",
+      "bytes": 100431,
+      "sha256": "a1458b737cb0cba77c6572852b575f37a7b9bf285bcc271785f9f80d21f53f57"
+    },
+    {
+      "path": "assets/vendor/do8.svg",
+      "bytes": 73606,
+      "sha256": "c39df66d50f3403424d28b9403c31f6feef72a73ebd5df4d210d0d6ef89f1b03"
+    },
+    {
+      "path": "assets/vendor/mai6.svg",
+      "bytes": 186012,
+      "sha256": "3781526c7e505ce24813f6804510461bde7571171ae534518f0d5534af2d1d9e"
+    },
+    {
+      "path": "assets/vendor/mao4.svg",
+      "bytes": 102307,
+      "sha256": "6b12d0e425f356d02bc9e4ff7e19e69f68300319479fce1891d1d2521fb99195"
+    },
+    {
+      "path": "assets/vendor/wb85.svg",
+      "bytes": 523437,
+      "sha256": "23628c3119c763d9ea1b34bd763f29b3e8a104b9cbb3fa5b5971f282cfe5bdd2"
+    },
+    {
+      "path": "assets/vendor/wbe-rs485.png",
+      "bytes": 867655,
+      "sha256": "75eb7cf0ceda74013253976ffcd3ac01adc4c92f3466fdb2d1e1d6c1fb89205e"
+    },
+    {
+      "path": "cabinet-specification.xlsx",
+      "bytes": 24347,
+      "sha256": "30a056172a17483f3689e59692094a64183533660d7a8c976e1b66b326d4279e"
+    },
+    {
+      "path": "heat-exchanger-automation.drawio",
+      "bytes": 6411426,
+      "sha256": "addf680dc7b76902ea3c391010d62da1f9980b7cd40eb1f980de9255cb5d41aa"
+    }
+  ]
+}
