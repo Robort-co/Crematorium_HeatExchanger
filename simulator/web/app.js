@@ -153,7 +153,9 @@ function render() {
 function renderWaterProtection() {
   const w=snapshot.waterProtection;
   const labels={PRIMARY_FAILED_WITH_BACKUP:'Отказ основного, резерв используется',RETURN_FAILED:'Нет температуры обратки'};
-  element('water-protection-state').textContent=w.enabled?'Перегрев воды: '+text(w.overheat)+' · Потеря подачи: '+text(w.supplyMissing)+' · Теплоотвод: '+text(w.removalRequested)+' · Предупреждение ΔT: '+text(w.deltaWarning)+(w.recoveryPending?' · Восстановление после reboot ожидает решения':''):'Водяной профиль выключен; используется прежняя тестовая предпосылка.';
+  element('water-protection-state').textContent=w.enabled?(w.recoveryPending?
+    'Нет достоверного снимка водяного профиля · Запрос теплоотвода: не восстановлен; выдача выходов на паузе':
+    'Перегрев воды: '+text(w.overheat)+' · Потеря подачи: '+text(w.supplyMissing)+' · Теплоотвод: '+text(w.removalRequested)+' · Предупреждение ΔT: '+text(w.deltaWarning)):'Водяной профиль выключен; используется прежняя тестовая предпосылка.';
   element('water-protection-warnings').textContent=w.warnings.map(x=>labels[x]??x).join('; ');
   element('tuf-timers').textContent=[['Расход',snapshot.telemetry.tuf.flow],['Резервная температура',snapshot.telemetry.tuf.backup]].map(([label,t])=>label+': '+text(t.value)+(t.held?' (последнее достоверное значение)':'')+' · до истечения свежести '+seconds(t.freshnessRemainingMs)+' с; диагностики '+seconds(t.diagnosticRemainingMs)+' с'+(t.freshnessExpired?' · свежесть истекла':'')+(t.diagnosticExpired?' · диагностическая выдержка истекла':'')).join(' | ');
   element('water-settings').disabled=!snapshot.engineering.enabled||!snapshot.hmiAvailable||snapshot.state!=='STOPPED'||!!snapshot.coverageGap||w.overheat||w.thermalRemoval||!!(snapshot.engineering.active||snapshot.shutterTest.active||snapshot.damperTest.active||snapshot.fanTest.active);

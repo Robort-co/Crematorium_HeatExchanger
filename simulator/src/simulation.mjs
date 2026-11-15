@@ -201,9 +201,7 @@ export class Simulation {
     this.boot.begin(savedState, savedStateReadable);
     if (savedTemperature.enabled) this.temperature.begin(this, savedStateReadable ? savedTemperature : null);
     if (savedWater.enabled) {
-      Object.assign(this.waterProtection,savedWater,{recoveryPending:true});
-      // Пока не согласована инициализация водяной защиты после reboot: не выдавать
-      // прежние/новые команды по выдуманному восстановлению её защёлок.
+      this.waterProtection.restoreSnapshot(savedWater, this.boot.readable);
     }
     if (!savedStateReadable) { this.log('RESTART', 'Имитируется непрочитанный снимок: состояние и блокировки неизвестны, автоматика восстановления запрещена'); this.tick(); return; }
     Object.assign(this.pressure, savedPressure);
@@ -462,15 +460,21 @@ export class Simulation {
     return record;
   }
   tick() {
+    if (this.waterProtection.recoveryPending) {
+      // Разрешение восстановить известную защёлку не разрешает угадать
+      // непрочитанный снимок и ранее действовавшие уставки/блокировки.
+      this.gap('Не прочитан снимок водяного профиля после reboot; автоматическое восстановление выходов не определено');
+      return;
+    }
     if (this.coverageGap) return;
-    if (this.waterProtection.recoveryPending) { this.gap('Восстановление водяных защит после reboot ожидает согласования; сохранённые значения не являются текущими командами'); return; }
     this.temperature.step(this); // Независимое наблюдение источников до допуска нового пуска/расчёта выходов.
     this.waterProtection.step(this);
     if (this.waterProtection.enabled && (this.waterProtection.overheat || this.waterProtection.supplyMissing) &&
-      (this.state === 'STARTING' || this.anyEngineeringTest())) {
-      this.gap('Новая критическая водяная причина во время незавершённого Пуска/инженерного теста ещё не имеет реализованной согласованной реакции');
+      this.anyEngineeringTest()) {
+      this.gap('Критическая водяная причина во время инженерного теста ещё вне согласованного сочетания');
       return;
     }
+    this.waterProtection.interruptStartup(this);
     if (this.exchange.hmi) this.lastHmiAt = this.clock.now;
     this.aranga.poll(this);
     // Только явно включённый генератор успешных чтений; частоту и команды он не воспроизводит.

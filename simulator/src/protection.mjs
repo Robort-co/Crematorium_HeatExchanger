@@ -159,6 +159,7 @@ export class Protection {
       this.emit(sim, 'st.direction', 'STOP');
       this.emit(sim, 'st.power', sim.boot.stPower(sim));
       const initial = sim.boot.initialRequests(sim); // Только определённые текущими входами запросы модели восстановления.
+      sim.waterProtection.enforce(initial); // Отдельный запрос теплоотвода действует и до завершения восстановления ТО.
       for (const [name, value] of Object.entries(initial)) this.emit(sim, name, value);
       if(sim.boot.initialOffAccepted){
         if(sim.signals.read('grid.normal')===true)sim.pumps.diagnose(sim,initial,false);

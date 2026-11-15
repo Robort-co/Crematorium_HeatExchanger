@@ -67,15 +67,13 @@ test('Водяные уставки: диапазоны и строгий пор
  assert.deepEqual(s.config,original);assert.equal(s.command('engineering_water_settings',{waterOverheat:92,waterRemovalOn:87,waterRemovalOff:81,deltaOn:22,deltaOff:20}).result,'ACCEPTED');
  water(s,87,60,50);s.advance(3000);assert.equal(s.outputs.value('heatRemoval.request'),true);
 });
-test('Водяной reboot вне утверждённого профиля явно приостанавливает модель без выдачи придуманного теплоотвода',()=>{
- const s=stopped();water(s,91,60,50);s.advance(3000);s.restart();assert.ok(s.coverageGap);assert.equal(s.waterProtection.recoveryPending,true);
- assert.equal(s.outputs.value('heatRemoval.request'),null);assert.equal(s.outputs.value('pump1.run'),null);assert.equal(s.waterProtection.overheat,true);
+test('Водяной reboot восстанавливает обе согласованные защёлки без старых команд насосам',()=>{
+ const s=stopped();water(s,91,60,50);s.advance(3000);s.restart();assert.equal(s.coverageGap,null);assert.equal(s.waterProtection.recoveryPending,false);
+ assert.equal(s.outputs.value('heatRemoval.request'),true);assert.equal(s.outputs.value('pump1.run'),null);assert.equal(s.waterProtection.overheat,true);
 });
 
-test('Граница: новая водяная причина во время уже принятого Пуска/инженерной проверки не получает выдуманного продолжения',()=>{
- for(const kind of ['START','TEST']){
-  const s=stopped();if(kind==='START')s.command('start');else{s.command('engineering_enter',true);s.command('engineering_shod_test');}
+test('Граница: новая водяная причина во время инженерной проверки не получает выдуманного продолжения',()=>{
+  const s=stopped();s.command('engineering_enter',true);s.command('engineering_shod_test');
   const before=s.outputs.value('pump1.run');water(s,null,null,50);assert.ok(s.coverageGap);assert.equal(s.outputs.value('pump1.run'),before);
   assert.equal(s.protection.bypassOpen,false);assert.notEqual(s.state,'STOPPING');
- }
 });

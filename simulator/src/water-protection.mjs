@@ -5,6 +5,7 @@
 export class WaterProtection {
   enabled = false;
   recoveryPending = false;
+  savedThermalRemoval = null; // История прочитанного снимка, отдельно от текущего запроса/подтверждения выхода.
   overheat = false;
   hotSince = null;
   thermalRemoval = false;
@@ -15,14 +16,36 @@ export class WaterProtection {
   deltaSince = null;
   deltaClearSince = null;
   warnings = [];
-  step(sim) {
-    if (!this.enabled || this.recoveryPending) return;
-    const water = sim.temperature.water, maximum = water.protectionMaximum;
-    // Не объединять сравнения: перегрев — превышение, теплоотвод — достижение.
+  restoreSnapshot(saved, readable) {
+    this.enabled = true;
+    this.recoveryPending = !readable;
+    // Согласование 15.11: обе установленные защёлки переживают reboot до своих
+    // условий снятия, без повторных 3 с. Непрочитанный снимок не угадываем.
+    // Таймеры, измерения и подтверждения выходов не переносим.
+    this.overheat = readable ? saved.overheat : false;
+    this.savedThermalRemoval = readable ? (saved.recoveryPending ? saved.savedThermalRemoval : saved.thermalRemoval) : null;
+    this.thermalRemoval = this.savedThermalRemoval === true;
+  }
+  observeOverheat(sim) {
+    const maximum = sim.temperature.water.protectionMaximum;
     if (maximum !== null && maximum > sim.config.waterOverheat) this.hotSince ??= sim.clock.now;
     else this.hotSince = null;
     if (this.hotSince !== null && sim.clock.now - this.hotSince >= 3000) this.overheat = true;
     if (maximum !== null && maximum < 86) this.overheat = false;
+    sim.temperature.ownFault(sim,'WATER_OVERHEAT',this.overheat,'Перегрев воды: запрет нового Пуска без останова работающего ТО (D-023)');
+  }
+  interruptStartup(sim) {
+    if (!this.enabled || !(this.overheat || this.supplyMissing) || sim.state !== 'STARTING') return;
+    // Согласование 15.11: принятый Пуск прерывается до возможности перейти в RUNNING.
+    // Снятие водяной причины не отменяет уже обязательный останов. Команды и
+    // независимые запреты циркуляции остаются у общей защитной последовательности.
+    sim.protection.beginStop(sim, 'Водяная защита прервала незавершённый Пуск: подтвердить ШБ, затем закрыть ШТ', 'STARTUP_WATER');
+  }
+  step(sim) {
+    if (!this.enabled || this.recoveryPending) return;
+    const water = sim.temperature.water, maximum = water.protectionMaximum;
+    // Не объединять сравнения: перегрев — превышение, теплоотвод — достижение.
+    this.observeOverheat(sim);
     if (maximum !== null && maximum >= sim.config.waterRemovalOn) this.removalSince ??= sim.clock.now;
     else this.removalSince = null;
     if (this.removalSince !== null && sim.clock.now - this.removalSince >= 3000) this.thermalRemoval = true;
@@ -31,7 +54,6 @@ export class WaterProtection {
     // Обратка не заменяет контроль подачи; требование D-024 имеет приоритет.
     this.supplyMissing = water.supplyMissing;
     this.removalRequested = this.supplyMissing || this.thermalRemoval;
-    sim.temperature.ownFault(sim,'WATER_OVERHEAT',this.overheat,'Перегрев воды: запрет нового Пуска без останова работающего ТО (D-023)');
     sim.temperature.ownFault(sim,'WATER_SUPPLY_UNAVAILABLE',this.supplyMissing,'Нет достоверной температуры подачи: теплоотвод и запрет нового Пуска (D-024)');
     this.warnings = [];
     if (water.primary === null && water.backup !== null) this.warnings.push('PRIMARY_FAILED_WITH_BACKUP');

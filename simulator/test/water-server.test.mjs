@@ -15,7 +15,33 @@ test('HTTP D-023/D-024: перегрев и потеря подачи запре
  assert.equal(state().waterProtection.supplyMissing,true);assert.equal(state().waterProtection.overheat,false);assert.equal(state().outputs['heatRemoval.request'].value,true);
  await act({type:'signal',name:'temperature.supply',value:60});assert.equal(state().waterProtection.supplyMissing,false);assert.equal(state().outputs['heatRemoval.request'].value,false);
 }));
-test('HTTP: водяной профиль после reboot сообщает границу и отвергает старое поколение',async()=>session(async(act,state)=>{
- await act({type:'water_fixture'});const old=state().generation;await act({type:'restart'});assert.equal(state().waterProtection.recoveryPending,true);assert.ok(state().coverageGap);
- assert.equal(state().outputs['heatRemoval.request'],undefined);await act({type:'command',action:'start',generation:old},400);
+test('HTTP: водяной профиль после reboot требует новые данные и отвергает старое поколение',async()=>session(async(act,state)=>{
+ await act({type:'water_fixture'});const old=state().generation;await act({type:'restart'});assert.equal(state().waterProtection.recoveryPending,false);assert.equal(state().coverageGap,null);
+ assert.equal(state().waterProtection.supplyMissing,true);assert.equal(state().outputs['heatRemoval.request'].value,true);await act({type:'command',action:'start',generation:old},400);
+}));
+
+test('HTTP: потеря подачи прерывает Пуск, новый контекст защищает подтверждение ШБ',async()=>session(async(act,state)=>{
+ await act({type:'water_fixture'}); await act({type:'command',action:'start'}); const old=state().procedureId;
+ for(const name of ['temperature.supply','temperature.backup'])await act({type:'signal',name,value:null,quality:'UNKNOWN'});
+ assert.equal(state().state,'STOPPING');assert.equal(state().stage,'WAIT_BYPASS');assert.equal(state().coverageGap,null);
+ await act({type:'command',action:'confirm_bypass_open',procedureId:old});assert.equal(state().lastRequest.result,'REJECTED');
+ await act({type:'command',action:'confirm_bypass_open'});assert.equal(state().lastRequest.result,'ACCEPTED');
+ assert.equal(state().outputs['heatRemoval.request'].value,true);
+}));
+
+test('HTTP: после reboot перегрев снимается по своему условию; теплоотвод ниже 80°C, без новой выдержки',async()=>session(async(act,state)=>{
+ await act({type:'water_fixture'});await act({type:'signal',name:'temperature.supply',value:91});await act({type:'advance',ms:3000});
+ await act({type:'restart',downtimeMs:100000});await act({type:'signal',name:'temperature.supply',value:88});
+ assert.equal(state().waterProtection.overheat,true);assert.equal(state().outputs['heatRemoval.request'].value,true);
+ await act({type:'signal',name:'temperature.supply',value:85.9});assert.equal(state().waterProtection.overheat,false);
+ assert.equal(state().outputs['heatRemoval.request'].value,true);
+ await act({type:'signal',name:'temperature.supply',value:79.9});assert.equal(state().outputs['heatRemoval.request'].value,false);
+ assert.equal(state().waterProtection.recoveryPending,false);assert.equal(state().coverageGap,null);
+}));
+
+test('HTTP: непрочитанный снимок сохраняет явную границу без команды теплоотвода',async()=>session(async(act,state)=>{
+ await act({type:'water_fixture'});await act({type:'restart',savedStateReadable:false});
+ assert.equal(state().waterProtection.recoveryPending,true);assert.ok(state().coverageGap);
+ assert.equal(state().outputs['heatRemoval.request'],undefined);
+ await act({type:'restart'});assert.equal(state().waterProtection.recoveryPending,true);assert.equal(state().boot.readable,false);
 }));

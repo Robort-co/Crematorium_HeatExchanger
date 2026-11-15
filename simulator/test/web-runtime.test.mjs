@@ -69,3 +69,16 @@ test('HMI JS: водяной профиль, раздельные сроки TUF
  assert.match(elements.get('water-protection-state').textContent,/Теплоотвод: 1/);assert.match(elements.get('outputs').innerHTML,/Нет физической обратной связи/);
  assert.match(elements.get('tuf-timers').textContent,/свежести 2.0 с; диагностики 5.0 с/);assert.equal(elements.get('water-settings').disabled,true);
 });
+
+test('HMI JS: после reboot перегрев и теплоотвод показаны раздельно, команда не является обратной связью',async()=>{
+ const sim=new Simulation();sim.loadWaterFixture();sim.signals.set('temperature.supply',91);sim.tick();sim.advance(3000);sim.restart();
+ const{api,elements}=await client(sim);assert.match(elements.get('water-protection-state').textContent,/Перегрев воды: 1/);
+ assert.match(elements.get('water-protection-state').textContent,/Теплоотвод: 1/);
+ sim.signals.set('temperature.supply',85);sim.tick();api.replace(sim.snapshot());api.render();
+ assert.match(elements.get('water-protection-state').textContent,/Перегрев воды: 0/);
+ assert.match(elements.get('water-protection-state').textContent,/Теплоотвод: 1/);
+ assert.match(elements.get('outputs').innerHTML,/Нет физической обратной связи/);
+ sim.restart({savedStateReadable:false});api.replace(sim.snapshot());api.render();
+ assert.match(elements.get('water-protection-state').textContent,/Нет достоверного снимка/);
+ assert.match(elements.get('water-protection-state').textContent,/Запрос теплоотвода: не восстановлен/);
+});
