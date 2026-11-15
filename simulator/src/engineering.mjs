@@ -1,5 +1,5 @@
-/** Отдельные инженерные проверки D-179–D-213, D-167.
- * Здесь нет общего цикла D-251 и физического подтверждения выключенной печи.
+/** Инженерные проверки D-179–D-213, D-167 и объединённая ветвь D-251/D-252.
+ * Порядок всех механизмов общего цикла и физическое подтверждение выключенной печи здесь не задаются.
  * enabled/furnaceOff — явные предпосылки испытателя, не новая аппаратная схема.
  */
 export class Engineering {
@@ -52,6 +52,7 @@ export class Engineering {
   leave(sim) {
     if (!this.enabled || this.active) return ['Завершите текущую попытку с подтверждённым OFF'];
     if (Object.values(this.returnRequired).some(Boolean) || Object.values(this.breakerOffRequired).some(Boolean)) return ['Завершите обязательные ручные действия'];
+    if (Object.values(sim.valves.waits).some(wait => wait.source === 'ENGINEERING_OPEN')) return ['Подтвердите ручное открытие неисправного затвора после проверки'];
     this.enabled = false; this.furnaceOff = false;
     for (const pump of [1, 2]) this.invalidate(pump);
     this.manualIsolation = null;
@@ -85,13 +86,13 @@ export class Engineering {
   }
   start(sim, options) {
     const { kind, pump, repaired } = options ?? {}; // kind — отдельный насос либо затвор; repaired — подтверждение ремонта/окончания вмешательства.
-    if (!['pump', 'valve'].includes(kind) || ![1, 2].includes(pump)) return ['Выберите насос/затвор и ветвь 1 или 2'];
+    if (!['pump', 'valve', 'branch'].includes(kind) || ![1, 2].includes(pump)) return ['Выберите насос/затвор/объединённую ветвь 1 или 2'];
     const reasons = this.commonReasons(sim);
     const branch = sim.pumps.branches[pump];
     const other = 3 - pump;
     if (this.active) reasons.push('Насосная группа занята текущей попыткой');
+    if (Object.values(sim.valves.waits).some(wait => wait.source === 'ENGINEERING_OPEN')) reasons.push('Завершите ручное открытие после предыдущей попытки');
     if (!this.off(sim, 1) || !this.off(sim, 2)) reasons.push('Требуются обе команды OFF и новые достоверные 000');
-    if (sim.pumps.groupFault) reasons.push('Возврат после критической аварии двух ветвей ещё не реализован в этом профиле');
     if (Object.values(this.breakerOffRequired).some(Boolean)) reasons.push('Сначала подтвердите требуемое отключение автомата привода');
     if (this.returnRequired[pump]) reasons.push('Собственная ветвь имеет незавершённый возврат ручного крана');
     const position = sim.signals.position('valve' + pump);
@@ -99,21 +100,21 @@ export class Engineering {
     const repair = branch.valveBlocked || branch.faults.length > 0 || branch.exclusions.length > 0;
     if (repair && repaired !== true) reasons.push('Подтвердите устранение причины и окончание ручного вмешательства');
     if (kind === 'pump' && (branch.valveBlocked || branch.faults.some(code => /VALVE|valve/.test(code)))) reasons.push('Сначала успешно проверьте и отдельно верните собственный затвор');
-    if (kind === 'valve' && branch.electricalIsolation && !branch.isolationConfirmed) reasons.push('Движение запрещено до отдельного подтверждения изоляции опасной электрической ветви');
+    if (kind !== 'pump' && branch.electricalIsolation && !branch.isolationConfirmed) reasons.push('Движение запрещено до отдельного подтверждения изоляции опасной электрической ветви');
     const manual = this.manualIsolation?.pump === other && this.manualIsolation.confirmed;
-    if (kind === 'pump' && sim.signals.position('valve' + other) !== 'CLOSED' && !manual) reasons.push('Нет подтверждённой изоляции противоположной ветви');
-    if (kind === 'pump' && branch.exclusions.includes('CHECK_AFTER_LOW_FLOW') && sim.signals.position('valve' + other) !== 'CLOSED') reasons.push('D-167 требует достоверного закрытия противоположного электрозатвора; ручная изоляция это условие не заменяет');
+    if (kind !== 'valve' && sim.signals.position('valve' + other) !== 'CLOSED' && !manual) reasons.push('Нет подтверждённой изоляции противоположной ветви');
+    if (kind !== 'valve' && branch.exclusions.includes('CHECK_AFTER_LOW_FLOW') && sim.signals.position('valve' + other) !== 'CLOSED') reasons.push('D-167 требует достоверного закрытия противоположного электрозатвора; ручная изоляция это условие не заменяет');
     if (reasons.length) return reasons;
-    this.invalidate(pump, kind);
+    this.invalidate(pump, kind === 'branch' ? null : kind);
     branch.manualClosed = false; branch.manualOpen = false; // D-177: до возврата разрешения электрического движения.
     this.breakerOffConfirmed[pump] = false;
     sim.procedureId += 1;
-    this.active = { kind, pump, stage: kind === 'valve' ? 'PREPARE_OPEN' : 'PREPARE_CLOSED',
+    this.active = { kind, pump, stage: kind !== 'pump' ? 'PREPARE_OPEN' : 'PREPARE_CLOSED',
       repair, startedAt: sim.clock.now, moveAt: null, moveRevision: null, onAt: null, openedAt: null,
-      isolation: kind === 'pump' ? (manual ? 'MANUAL' : 'VALVE') : null, manualPump: manual && kind === 'pump' ? other : null,
-      electrical: 'NOT_CHECKED', hydraulic: 'NOT_CHECKED', result: 'NOT_CHECKED', reason: null, electricalTripped: false };
+      isolation: kind !== 'valve' ? (manual ? 'MANUAL' : 'VALVE') : null, manualPump: manual && kind !== 'valve' ? other : null,
+      electrical: 'NOT_CHECKED', hydraulic: 'NOT_CHECKED', valveResult: 'NOT_CHECKED', result: 'NOT_CHECKED', reason: null, electricalTripped: false };
     // Обязанность возврата хранится до первого движения; разрешение ручной изоляции потребляется этой попыткой.
-    if (kind === 'pump' && manual) this.manualIsolation = null;
+    if (kind !== 'valve' && manual) this.manualIsolation = null;
     for (const index of [1, 2]) {
       sim.request['pump' + index + '.run'] = false;
       sim.request['valve' + index + '.direction'] = 'STOP';
@@ -122,8 +123,8 @@ export class Engineering {
     sim.log('ENGINEERING_START', 'Отдельная проверка ' + kind + ', ветвь ' + pump + '; успех не возвращает ветвь автоматически');
     return [];
   }
-  permitValve(pump) { return this.active?.pump === pump && this.active.kind === 'valve' && this.active.stage !== 'WAIT_OFF'; }
-  permitPump(pump) { return this.active?.pump === pump && this.active.kind === 'pump' && !this.active.electricalTripped && this.active.stage !== 'WAIT_OFF'; }
+  permitValve(pump) { return this.active?.pump === pump && this.active.kind !== 'pump' && this.active.stage !== 'WAIT_OFF'; }
+  permitPump(pump) { return this.active?.pump === pump && this.active.kind !== 'valve' && !this.active.electricalTripped && this.active.stage !== 'WAIT_OFF'; }
   stop(sim, reason = 'Прервано инженером', result = 'NOT_CHECKED') {
     const operation = this.active;
     if (!operation || operation.stage === 'WAIT_OFF') return;
@@ -131,14 +132,15 @@ export class Engineering {
     operation.reason = reason;
     operation.stage = 'WAIT_OFF';
     operation.moveAt = null;
-    if (operation.kind === 'valve' && operation.repair && result !== 'PASSED') this.breakerOffRequired[operation.pump] = true;
+    if (operation.kind !== 'pump' && operation.repair && result !== 'PASSED') this.breakerOffRequired[operation.pump] = true;
     sim.log('ENGINEERING_STOP', reason + '; ожидание достоверного OFF, без автоматического повтора');
   }
   motionFailed(sim, pump) {
     if (this.active?.pump !== pump) return;
     sim.pumps.branches[pump].valveBlocked = true;
     this.breakerOffRequired[pump] = true;
-    this.stop(sim, 'Проверочное положение затвора не подтверждено', this.active.kind === 'valve' ? 'FAILED' : 'NOT_CHECKED');
+    this.active.valveResult = 'FAILED';
+    this.stop(sim, 'Проверочное положение затвора не подтверждено', this.active.kind !== 'pump' ? 'FAILED' : 'NOT_CHECKED');
   }
   move(sim, request, desired, next) { // Отдельный ход, 45 с; цель должна быть новым ответом после команды.
     const operation = this.active;
@@ -170,7 +172,7 @@ export class Engineering {
         operation.electricalTripped = true;
         this.stop(sim, 'Электрическая диагностика: результат классификации ожидается (D-142/D-201)');
       } else if (operation.kind === 'valve' && (!this.off(sim, 1) || !this.off(sim, 2))) this.stop(sim, 'Утрачено подтверждение OFF насосов');
-      else if (operation.kind === 'pump' && operation.isolation === 'VALVE' && sim.signals.position('valve' + (3 - pump)) !== 'CLOSED') this.stop(sim, 'Утрачена изоляция противоположной ветви (D-200)');
+      else if (operation.kind !== 'valve' && operation.isolation === 'VALVE' && sim.signals.position('valve' + (3 - pump)) !== 'CLOSED') this.stop(sim, 'Утрачена изоляция противоположной ветви (D-200)');
       else if (position === 'UNKNOWN') this.stop(sim, 'Нет достоверных концевиков проверяемого затвора');
       else if (this.commonReasons(sim).length) this.stop(sim, 'Утрачены условия допуска (D-201): ' + this.commonReasons(sim).join('; '));
     }
@@ -183,7 +185,12 @@ export class Engineering {
       else if (operation.stage === 'BREAK_OPEN') operation.stage = 'OPEN';
       else if (operation.stage === 'OPEN' && this.move(sim, request, 'OPEN', 'SUCCESS')) this.stop(sim, 'Оба проверочных хода подтверждены (D-204)', 'PASSED');
     } else {
-      if (operation.stage === 'PREPARE_CLOSED') {
+      if (operation.kind === 'branch' && operation.stage === 'PREPARE_OPEN') {
+        if (position === 'OPEN') operation.stage = 'CLOSE';
+        else this.move(sim, request, 'OPEN', 'BREAK_CLOSE');
+      } else if (operation.stage === 'BREAK_CLOSE') operation.stage = 'CLOSE';
+      else if (operation.stage === 'CLOSE') this.move(sim, request, 'CLOSE', 'PUMP_ON'); // Реальный проверочный CLOSE, а не принятие исходного положения.
+      else if (operation.stage === 'PREPARE_CLOSED') {
         if (position === 'CLOSED') operation.stage = 'PUMP_ON';
         else this.move(sim, request, 'CLOSE', 'PUMP_ON');
       } else if (operation.stage === 'PUMP_ON') {
@@ -212,9 +219,18 @@ export class Engineering {
             this.stop(sim, 'Гидравлическая проверка ветви не пройдена (D-188/D-197)', 'FAILED');
           } else {
             operation.hydraulic = 'PASSED';
-            this.stop(sim, 'Гидравлика подтверждена; проверяется выключение насоса (D-190)', 'PASSED');
+            if (operation.kind === 'branch') operation.stage = 'FINAL_CLOSE'; // D-251 изменяет только объединённый тест: закрыть при работающем насосе.
+            else this.stop(sim, 'Гидравлика подтверждена; проверяется выключение насоса (D-190)', 'PASSED');
           }
         }
+      } else if (operation.stage === 'FINAL_CLOSE') {
+        request['pump' + pump + '.run'] = true;
+        if (this.move(sim, request, 'CLOSE', 'FINAL_OFF')) request['pump' + pump + '.run'] = false;
+      } else if (operation.stage === 'FINAL_OFF') {
+        if (this.off(sim, pump)) operation.stage = 'FINAL_OPEN'; // Новый 000 после OFF обязателен перед заключительным OPEN.
+      } else if (operation.stage === 'FINAL_OPEN' && this.move(sim, request, 'OPEN', 'SUCCESS')) {
+        operation.valveResult = 'PASSED';
+        this.stop(sim, 'Объединённый цикл: насос проверен и выключен, затвор вновь открыт (D-251)', 'PASSED');
       }
       const on = sim.outputs.commands['pump' + pump + '.run'];
       if (on?.value === true && sim.signals.phases(pump)?.every(Boolean) &&
@@ -225,9 +241,14 @@ export class Engineering {
       if (operation.electricalTripped && branch.classificationAt === null) { operation.electrical = 'FAILED'; operation.result = 'FAILED'; }
       if ([1, 2].every(index => this.off(sim, index)) && branch.classificationAt === null &&
           (pressureTrip || [1, 2].every(index => sim.outputs.value('valve' + index + '.direction') === 'STOP'))) {
-        if (operation.kind === 'pump' && operation.result === 'PASSED' && operation.electrical !== 'PASSED') operation.result = 'NOT_CHECKED';
+        if (operation.kind !== 'valve' && operation.result === 'PASSED' && operation.electrical !== 'PASSED') operation.result = 'NOT_CHECKED';
         const result = { ...operation, completedAt: sim.clock.now, valid: operation.result === 'PASSED' };
-        this.results[pump][operation.kind] = result;
+        if (operation.kind === 'branch') {
+          // D-252: успешные измерения насоса не превращают неудавшуюся объединённую ветвь в успешную.
+          this.results[pump].pump = { ...result, kind: 'pump', result: operation.electrical === 'PASSED' && operation.hydraulic === 'PASSED' ? 'PASSED' : operation.result };
+          this.results[pump].valve = { ...result, kind: 'valve', result: operation.valveResult };
+          if (operation.valveResult === 'FAILED') sim.valves.requestManual(sim, pump, 'OPEN', 'ENGINEERING_OPEN', null);
+        } else this.results[pump][operation.kind] = result;
         this.history.push(structuredClone(result));
         this.active = null;
         sim.log('ENGINEERING_RESULT', 'Ветвь ' + pump + ', ' + operation.kind + ': ' + operation.result + '. Возврат — отдельная команда');
@@ -257,6 +278,7 @@ export class Engineering {
       branch.inhibited = false; branch.electricalIsolation = false; branch.isolationConfirmed = false;
     }
     this.results[pump][kind].valid = false; // Однократно использованный допуск, без автоматического пуска.
+    if (sim.pumps.groupFault) sim.pumps.groupReturns[pump][kind] = true;
     sim.log('ENGINEERING_RETURN', 'Ветвь ' + pump + ': возвращён ' + kind + '; сняты только связанные проверенные причины');
     return [];
   }

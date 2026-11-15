@@ -3,6 +3,7 @@
  * Новая физическая схема и реальные NV-записи здесь не назначаются.
  */
 export class PumpGroup {
+  groupReturns = { 1: { valve: false, pump: false }, 2: { valve: false, pump: false } }; // D-116: отдельные возвраты после возникновения групповой аварии.
   active = null; // Текущая смена; два одновременно включённых насоса допустимы по D-010.
   history = null; // Итог последней смены для HMI, не разрешение на повторный пуск.
   branches = { 1: this.branch(), 2: this.branch() }; // Раздельные ошибки и разрешения двух ветвей.
@@ -26,13 +27,19 @@ export class PumpGroup {
   }
   fail(sim, pump, code, text, evidence = 'CONFIRMED') { // pump/code/text/evidence — ветвь, причина и основание диагностики.
     const branch = this.branches[pump]; // Ошибка этой ветви не выводится из общих Q/ΔP.
-    if (!branch.faults.includes(code)) { branch.faults.push(code); sim.engineering.invalidate(pump, /VALVE|valve/.test(code) ? 'valve' : 'pump'); }
+    if (!branch.faults.includes(code)) {
+      branch.faults.push(code);
+      sim.engineering.invalidate(pump, /VALVE|valve/.test(code) ? 'valve' : 'pump');
+      this.groupReturns[pump].pump = false;
+      if (/VALVE|valve/.test(code)) this.groupReturns[pump].valve = false;
+    }
     sim.protection.fault(sim, code, text, evidence);
   }
   reasons(sim, target) { // target — запрошенная резервная ветвь; неизвестность не разрешает включение.
     const reasons = []; // Причины отказа нового запроса, без очереди команд.
     if (![1, 2].includes(target)) return ['Номер насоса должен быть 1 или 2'];
     if (this.active) reasons.push('Смена уже выполняется');
+    if (sim.recovery.active) reasons.push('Выполняется специальное восстановление');
     if (sim.engineering.enabled) reasons.push('Инженерный режим: автоматическая/ручная рабочая смена запрещена');
     if (target === sim.selectedPump) reasons.push('Этот насос уже выбран');
     if (this.branches[target].faults.length || this.branches[target].exclusions.length || this.branches[target].inhibited) reasons.push('Резерв исключён или заблокирован');
@@ -84,7 +91,7 @@ export class PumpGroup {
           branch.voltageFaultRevision = sim.signals.revision;
           branch.inhibited = true;
           if (sim.engineering.active) {
-            const ownPumpTest = sim.engineering.active.kind === 'pump' && sim.engineering.active.pump === pump; // Отказ другого насоса не доказывает отказ проверяемого механизма D-180/D-201.
+            const ownPumpTest = sim.engineering.active.kind !== 'valve' && sim.engineering.active.pump === pump; // Отказ другого насоса не доказывает отказ проверяемого механизма D-180/D-201.
             if (ownPumpTest) sim.engineering.active.electricalTripped = true;
             sim.engineering.stop(sim, 'Напряжение при OFF насоса ' + pump + ' (D-143)', ownPumpTest ? 'FAILED' : 'NOT_CHECKED');
           }
@@ -103,6 +110,7 @@ export class PumpGroup {
       if (branch.classificationAt !== null && sim.clock.now - branch.classificationAt >= 2000) {
         branch.classificationAt = null;
         this.fail(sim, pump, 'PUMP_PHASES_ON_' + pump, 'Отсутствие фаз при ON насоса ' + pump + ' подтверждено после 1+2 с (D-142)');
+        if (!pressureTrip && this.active?.to === pump && ['STARTING', 'RUNNING'].includes(sim.state)) this.reverse(sim, pump, 'ELECTRICAL_FAILURE');
         if (!pressureTrip && !this.active && ['STARTING', 'RUNNING'].includes(sim.state)) {
           const reasons = this.begin(sim, 3 - pump, 'ELECTRICAL_FAILURE'); // Резерв не ждёт закрытия отказавшей ветви.
           if (reasons.length) sim.protection.beginStop(sim, 'Недоступен резерв после отказа насоса: ' + reasons.join('; '));
@@ -113,12 +121,43 @@ export class PumpGroup {
   }
   checkGroup(sim) {
     if ([1, 2].every(pump => this.branches[pump].faults.length)) {
+      if (!this.groupFault) this.groupReturns = { 1: { valve: false, pump: false }, 2: { valve: false, pump: false } };
       this.groupFault = true;
       this.emergencyCirculationRequested = true;
       sim.protection.fault(sim, 'PUMP_GROUP_FAILED', 'Неисправны обе насосные ветви (D-117/D-118)');
       sim.protection.beginStop(sim, 'Критическая авария насосной группы: байпас и обязательный останов');
       if (this.active) { this.history = { ...this.active, stage: 'FAILED_GROUP' }; this.active = null; }
     }
+  }
+  resetGroup(sim, confirmed) {
+    if (confirmed !== true || !this.groupFault) return ['Нужны отдельное подтверждение и действующая групповая авария'];
+    if (sim.engineering.enabled || sim.engineering.active || !sim.stoppedConfirmed()) return ['Завершите подтверждённый останов и выйдите из инженерного режима'];
+    if (Object.values(sim.engineering.returnRequired).some(Boolean) || Object.values(sim.engineering.breakerOffRequired).some(Boolean)) return ['Не завершены ручные действия'];
+    if ([1, 2].some(pump => !this.groupReturns[pump].valve || !this.groupReturns[pump].pump || this.branches[pump].faults.length || this.branches[pump].exclusions.length || this.branches[pump].inhibited || this.branches[pump].valveBlocked)) return ['Обе ветви должны пройти проверки затвора/насоса и отдельные возвраты после групповой аварии (D-116)'];
+    this.groupFault = false;
+    this.emergencyCirculationRequested = false;
+    sim.protection.faults = sim.protection.faults.filter(fault => fault.code !== 'PUMP_GROUP_FAILED');
+    sim.log('GROUP_RESET', 'Снята только авария насосной группы; новый Пуск требуется отдельно (D-116)');
+    return [];
+  }
+  reverse(sim, failed, cause) {
+    const previous = this.active;
+    if (!previous || previous.to !== failed) return false;
+    const target = previous.from;
+    const branch = this.branches[target];
+    this.checkGroup(sim);
+    if (this.groupFault) return false;
+    // Доступный прежний насос уже OFF/000, его затвор CLOSED: обычная последовательность D-010 применима без нового исключения.
+    if (branch.faults.length || branch.exclusions.length || branch.inhibited || branch.valveBlocked ||
+        sim.outputs.value('pump' + target + '.run') !== false || !sim.signals.phases(target)?.every(value => !value) || sim.signals.position('valve' + target) !== 'CLOSED') {
+      sim.gap('Обратное резервирование: прежняя ветвь ещё не OFF/000/CLOSED либо недоступна; это сочетание остаётся вне реализованного профиля');
+      return false;
+    }
+    this.history = { ...previous, stage: 'REVERSED' };
+    this.active = null; sim.selectedPump = failed;
+    const reasons = this.begin(sim, target, cause);
+    if (reasons.length) sim.protection.beginStop(sim, 'Обратный резерв недоступен: ' + reasons.join('; '));
+    return reasons.length === 0;
   }
   confirmClosed(sim, pump) { // pump — конкретный затвор из текущего запроса; DI не перезаписываются.
     if (sim.valves.waits[pump]?.target === 'CLOSED') return sim.valves.confirm(sim, pump, 'CLOSED');
@@ -181,6 +220,7 @@ export class PumpGroup {
       } else operation.openedAt = null;
       if (operation.openedAt !== null && sim.clock.now - operation.openedAt >= 5000) {
         operation.circulationConfirmed = sim.hydraulics.verifySwitch(sim, operation) && sim.signals.phases(operation.to)?.every(Boolean) === true;
+        if (this.active !== operation) return; // Новый обратный переход не завершается устаревшим объектом прежней смены.
         if (operation.verificationFailed) operation.stage = 'FAILED_CIRCULATION';
       }
     }
@@ -197,8 +237,8 @@ export class PumpGroup {
   enforce(sim, request) { // Последний приоритет насосов/движения; не отменяет другие защиты.
     for (const pump of [1, 2]) { // pump — независимое ограничение каждой ветви.
       const branch = this.branches[pump]; // Сохранённые ошибки не сбрасываются окончанием смены/останова.
-      if ((branch.inhibited && !sim.engineering.permitPump(pump)) || branch.valvePumpOff || this.groupFault) request['pump' + pump + '.run'] = false;
-      if (this.groupFault) request['valve' + pump + '.direction'] = 'OPEN';
+      if ((branch.inhibited && !sim.engineering.permitPump(pump)) || (branch.valvePumpOff && !sim.engineering.permitValve(pump)) || (this.groupFault && !sim.engineering.permitPump(pump))) request['pump' + pump + '.run'] = false;
+      if (this.groupFault && !sim.engineering.enabled) request['valve' + pump + '.direction'] = 'OPEN'; // D-116: контролируемая проверка в остановленном ТО отдельно от аварийного открытия в работе.
       if ((branch.electricalIsolation && !sim.engineering.permitPump(pump) && (!branch.isolationConfirmed || !sim.signals.phases(pump)?.every(value => !value))) || (branch.valveBlocked && !sim.engineering.permitValve(pump))) request['valve' + pump + '.direction'] = 'STOP';
       else if (branch.electricalIsolation && branch.isolationConfirmed && !this.groupFault && sim.state === 'STOPPING' && sim.protection.stopStage === 'WAIT_BYPASS') request['valve' + pump + '.direction'] = 'CLOSE';
     }

@@ -121,10 +121,28 @@ test('D-139/D-172: ограниченное ручное открытие пос
   assert.ok(sim.pumps.branches[1].faults.length);
 });
 
-test('D-177: новые противоречащие ручному закрытию сведения отмечаются открытой границей, не новой защитой', () => {
+test('D-177, согласование 15.11: новое OPEN против ручного CLOSED снимает отметку и требует останова через ШБ/ШТ', () => {
   const sim = running(); position(sim, 2, false, false); sim.advance(5000); sim.advance(45000);
   sim.command('confirm_valve_closed', 2); position(sim, 2, true, false);
-  assert.match(sim.coverageGap, /D-177/);
+  assert.equal(sim.coverageGap, null);
+  assert.equal(sim.state, 'STOPPING');
+  assert.equal(sim.protection.stopStage, 'WAIT_BYPASS');
+  assert.equal(sim.pumps.branches[2].manualClosed, false);
+  assert.equal(sim.outputs.value('pump1.run'), true);
+  assert.equal(sim.outputs.value('valve2.direction'), 'STOP');
+  position(sim, 2, false, true);
+  assert.equal(sim.state, 'STOPPING');
+  sim.command('confirm_bypass_open'); sim.sampleGroup('stClosed');
+  assert.equal(sim.outputs.value('pump1.run'), true);
+  sim.sampleGroup('valve1Closed');
+  assert.equal(sim.outputs.value('pump1.run'), false);
+});
+
+test('D-177: обратное противоречие ручному OPEN не получает автоматически согласование для CLOSED', () => {
+  const sim = running(); sim.pumps.branches[2].valveBlocked = true;
+  sim.pumps.branches[2].manualOpen = 'PASSAGE'; sim.pumps.branches[2].manualEvidencePosition = 'UNKNOWN';
+  sim.tick();
+  assert.match(sim.coverageGap, /вне согласованного случая/);
   assert.equal(sim.state, 'RUNNING');
 });
 

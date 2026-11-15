@@ -2,6 +2,37 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSimulatorServer } from '../server.mjs';
 
+test('HTTP: D-112/D-171 и согласованный D-177 через локальные действия, без обхода поколения и контекста', async () => {
+  const { server } = createSimulatorServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let snapshot = await (await fetch(base + '/api/state')).json();
+  const act = async data => {
+    const response = await fetch(base + '/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ generation: snapshot.generation, procedureId: snapshot.procedureId, ...data }) });
+    assert.equal(response.status, 200); snapshot = await response.json();
+  };
+  try {
+    await act({ type: 'recovery_fixture', pump: 1 });
+    const oldProcedure = snapshot.procedureId;
+    await act({ type: 'group', name: 'valve2Closed' }); await act({ type: 'advance', ms: 45000 });
+    assert.equal(snapshot.outputs['pump1.run'].value, false); assert.equal(snapshot.outputs['pump2.run'].value, true);
+    await act({ type: 'group', name: 'pump2On' }); await act({ type: 'advance', ms: 1000 });
+    await act({ type: 'group', name: 'valve2Open' }); await act({ type: 'group', name: 'flowNormal' }); await act({ type: 'advance', ms: 5000 });
+    await act({ type: 'command', action: 'confirm_valve_closed', value: 1 });
+    assert.equal(snapshot.state, 'RUNNING');
+    await act({ type: 'signal', name: 'valve1.open', value: null, quality: 'UNKNOWN' });
+    assert.equal(snapshot.pumpGroup.branches[1].manualClosed, true);
+    await act({ type: 'group', name: 'valve1Open' });
+    assert.equal(snapshot.state, 'STOPPING'); assert.equal(snapshot.coverageGap, null);
+    assert.equal(snapshot.outputs['pump2.run'].value, true);
+    await act({ type: 'command', action: 'confirm_bypass_open', procedureId: oldProcedure });
+    assert.equal(snapshot.lastRequest.result, 'REJECTED');
+    await act({ type: 'command', action: 'confirm_bypass_open' }); await act({ type: 'group', name: 'stClosed' });
+    await act({ type: 'group', name: 'valve2Closed' });
+    assert.equal(snapshot.state, 'STOPPED'); assert.equal(snapshot.outputs['pump2.run'].value, false);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
 test('HTTP: инженерный отказ по гидравлике, успешный повтор и отдельный возврат ветви через команды HMI', async () => {
   const { server } = createSimulatorServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

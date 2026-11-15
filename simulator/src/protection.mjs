@@ -78,7 +78,9 @@ export class Protection {
         const branch = sim.pumps.branches[pump]; // Предыдущие 45+60 с повторно не запускаются, D-170.
         if (sim.outputs.value('pump' + pump + '.run') !== true) { request['pump' + pump + '.run'] = false; continue; }
         if (branch.valveBlocked && !branch.manualClosed && !branch.closeExhausted) {
-          sim.gap('Полный останов с заблокированным приводом и без ручного закрытия: процедура ещё не перенесена; 45 с без выданной CLOSE не отсчитываются (D-175)');
+          request['valve' + pump + '.direction'] = 'STOP';
+          if (sim.valves.waits[pump]?.target === 'OPEN') delete sim.valves.waits[pump]; // Текущее задание закрыть для останова заменяет прежнее открытие, не отменяя его ошибку.
+          sim.valves.requestManual(sim, pump, 'CLOSED', 'STOP_CLOSE', null); // Нет выданного CLOSE — нет нового автоматического таймаута 45 с.
           continue;
         }
         this.pumpCloseAt[pump] ??= sim.clock.now;
@@ -95,6 +97,10 @@ export class Protection {
       if ([1, 2].every(pump => request['pump' + pump + '.run'] === false)) {
         request['valve1.direction'] = 'OPEN';
         request['valve2.direction'] = 'OPEN';
+        for (const pump of [1, 2]) if (sim.pumps.branches[pump].valveBlocked) {
+          delete sim.valves.waits[pump]; // Завершён этап закрытия; D-175/D-177 требуют новое, противоположное ручное положение.
+          sim.valves.requestManual(sim, pump, 'OPEN', 'STOP_OPEN', null);
+        }
         this.stopStage = 'FINAL_OUTPUTS';
         if (sim.pumps.active) { sim.pumps.history = { ...sim.pumps.active, stage: 'STOPPED' }; sim.pumps.active = null; }
       }
@@ -193,6 +199,7 @@ export class Protection {
       sim.pumps.active = null;
     }
     sim.pumps.step(sim, request); // Продолжаем уже принятую смену до заключительного насосного останова.
+    sim.recovery.step(sim, request, low || noPressure);
     sim.engineering.step(sim, request, low || noPressure); // Только запросы проверки, самостоятельные защиты остаются старше.
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);
     if (low || noPressure) {

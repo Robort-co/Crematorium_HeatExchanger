@@ -9,6 +9,7 @@ import { PumpGroup } from './pumps.mjs';
 import { HydraulicControl } from './hydraulics.mjs';
 import { PumpValves } from './valves.mjs';
 import { Engineering } from './engineering.mjs';
+import { PumpRecovery } from './recovery.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -53,6 +54,7 @@ export class Simulation {
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
     this.main = new MainProgram(); // Основная последовательность без права выдачи.
+    this.recovery = new PumpRecovery(); // Только специальный допуск D-112; обычный пуск его не получает.
     this.hydraulics = new HydraulicControl(); // Матрица пусковых/рабочих критериев без подстановки отсутствующих Q/ΔP.
     this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
     this.valves = new PumpValves(); // Позиционная диагностика и ручные ожидания, отдельно от физических входов.
@@ -104,6 +106,23 @@ export class Simulation {
     this.log('ASSUMPTION', 'Профиль: частотные настройки/тесты подтверждены, резонанс не выявлен, температуры и сеть нормальны. Это данные имитатора, не оборудования');
     this.tick();
   }
+  loadRecoveryFixture(selected = 1) {
+    if (![1, 2].includes(selected)) throw new Error('Выберите ветвь 1 или 2');
+    this.loadFixture();
+    this.selectedPump = selected;
+    this.signals.set('st.open', true); this.signals.set('st.closed', false);
+    this.signals.set('vfd.running', true);
+    for (const [name, value] of Object.entries({ 'vfd.run': 'START', 'vfd.enable': true })) {
+      this.request[name] = value;
+      this.outputs.commands[name] = { id: ++this.outputs.sequence, value, issuedAt: this.clock.now,
+        delivery: 'ACCEPTED', deliveredAt: this.clock.now, origin: 'TEST_FIXTURE', issuedInputRevision: -1, deliveryInputRevision: -1 };
+    }
+    this.transition('STARTING', 'Тестовая точка: отдельный допуск к специальному восстановлению уже получен');
+    this.main.bypassClosed = true;
+    this.recovery.begin(this, selected);
+    this.log('ASSUMPTION', 'D-112: допустимость раннего восстановления, открытый ШТ, работающий ПЧ и закрытый ШБ заданы испытателем. Полная отмена защиты D-149 здесь не проверяется');
+    this.tick();
+  }
   restart() {
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
@@ -135,7 +154,7 @@ export class Simulation {
       const operation = { ...savedEngineering.active, result: savedEngineering.active.result === 'FAILED' ? 'FAILED' : 'NOT_CHECKED', reason: 'Прервано перезагрузкой модели', valid: false }; // Автоматическое продолжение запрещено D-194/D-209; уже выявленный отказ не переименовывается в успех/пропуск.
       this.engineering.results[operation.pump][operation.kind] = operation;
       this.engineering.interruptedAttempt = operation;
-      if (operation.kind === 'valve' && operation.repair) this.engineering.breakerOffRequired[operation.pump] = true;
+      if (operation.kind !== 'pump' && operation.repair) this.engineering.breakerOffRequired[operation.pump] = true;
     }
     this.valves.waits = savedWaits;
     for (const wait of Object.values(this.valves.waits)) { wait.suspended = true; wait.updatedAt = this.clock.now; } // Полное восстановление технологического этапа пока не реализовано: остаток не запускает движение.
@@ -245,6 +264,10 @@ export class Simulation {
         },
       }; // Разрешённые локальные действия, без универсального сброса защит.
       record.reasons = handlers[action] ? handlers[action]() : ['Неизвестная инженерная команда'];
+      if (!record.reasons.length) record.result = 'ACCEPTED';
+    }
+    else if (action === 'reset_pump_group') {
+      record.reasons = this.pumps.resetGroup(this, value);
       if (!record.reasons.length) record.result = 'ACCEPTED';
     }
     else if (action === 'reset_flow_faults') {
@@ -360,7 +383,7 @@ export class Simulation {
       flow: this.signals.flow(), dp: before !== null && after !== null ? this.hydraulics.values(this).dp : null,
       circulation: this.circulation(), faults: this.protection.faults, stBlocked: this.protection.stBlocked,
       hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
-      selectedPump: this.selectedPump, pumpGroup: this.pumps, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
+      selectedPump: this.selectedPump, pumpGroup: this.pumps, recovery: this.recovery, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
   }

@@ -290,7 +290,7 @@ test('Потеря открытия во время смены: без повт�
   assert.equal(sim.outputs.value('valve2.direction'), 'STOP');
   assert.equal(sim.selectedPump, 1);
   sim.advance(5000);
-  assert.match(sim.coverageGap, /обратное резервирование/);
+  assert.match(sim.coverageGap, /обратное резервирование/i);
   assert.ok(sim.pumps.branches[2].faults.includes('VALVE_LOST_OPEN_2'));
 });
 

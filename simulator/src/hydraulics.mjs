@@ -105,7 +105,9 @@ export class HydraulicControl {
     if (result.state === 'OK') { this.warn(null); return true; }
     if (result.state === 'LOW') {
       if (!sim.pumps.branches[operation.from].faults.length) {
-        sim.gap('Низкая циркуляция после ручной смены при ещё исправной прежней ветви: обратное резервирование этого случая ещё не реализовано');
+        sim.pumps.fail(sim, operation.to, 'HYDRAULIC_LOW_' + operation.to, 'Низкая циркуляция новой ветви после открытия +5 с', 'HYDRAULIC_CRITERION');
+        operation.verificationFailed = true;
+        sim.pumps.reverse(sim, operation.to, 'HYDRAULIC_LOW');
         return false;
       }
       sim.pumps.fail(sim, operation.to, 'HYDRAULIC_LOW_' + operation.to, 'Недостаточная циркуляция на резервной ветви ' + operation.to + ' после открытия +5 с', 'HYDRAULIC_CRITERION');

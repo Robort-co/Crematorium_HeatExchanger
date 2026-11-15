@@ -13,18 +13,19 @@ export class PumpValves {
     const branch = sim.pumps.branches[pump];
     return sim.signals.position('valve' + pump) === 'OPEN' || branch.manualOpen === 'RUN';
   }
-  requestManual(sim, pump, target, source) {
+  requestManual(sim, pump, target, source, timeout = 60000) {
     if (this.waits[pump]) return; // Повтор сообщения/окна не начинает новые 60 с.
     const branch = sim.pumps.branches[pump];
     branch.valveBlocked = true;
     if (target === 'OPEN') branch.manualClosed = false;
-    this.waits[pump] = { target, source, remaining: 60000, updatedAt: sim.clock.now, expired: false, suspended: false };
-    sim.log('PROMPT', 'Затвор ' + pump + ': отключите автомат привода, проверьте/установите ' + target + ', подтвердите на месте. Ожидание 60 с (D-175)');
+    this.waits[pump] = { target, source, remaining: timeout, updatedAt: sim.clock.now, expired: false, suspended: false };
+    sim.log('PROMPT', 'Затвор ' + pump + ': отключите автомат привода, проверьте/установите ' + target + ', подтвердите на месте.' + (timeout === null ? ' Новый таймаут не назначен (D-175)' : ' Ожидание 60 с'));
   }
   confirm(sim, pump, target) {
     const wait = this.waits[pump];
     if (!wait || wait.target !== target || wait.suspended) return ['Нет актуального запроса этого ручного положения'];
     const branch = sim.pumps.branches[pump];
+    if (wait.source === 'ENGINEERING_OPEN' && (!sim.engineering.off(sim, pump) || sim.engineering.breakerOffRequired[pump])) return ['Сначала подтвердите OFF/000 насоса и отключение автомата привода'];
     if (target === 'OPEN' && wait.source === 'START_OPEN') {
       if (sim.signals.position('valve' + pump) !== 'INTERMEDIATE' || sim.pumps.branches[3 - pump].faults.length || sim.pumps.branches[3 - pump].exclusions.length || sim.pumps.branches[3 - pump].inhibited) return ['Обход открытия разрешён только при 0/0 и исправной другой ветви (D-139)'];
       branch.manualOpen = 'RUN';
@@ -44,7 +45,7 @@ export class PumpValves {
     if (sim.pumps.groupFault) return;
     if (sim.pumps.active) {
       // Старый затвор уже закрывается; новый отказ не запускает вторую параллельную смену.
-      if (sim.pumps.active.to === pump) sim.gap('Диагноз новой ветви во время смены установлен; обратное резервирование на прежнюю исправную ветвь ещё не перенесено');
+      if (sim.pumps.active.to === pump) sim.pumps.reverse(sim, pump, 'VALVE_FAILURE');
       return;
     }
     const reasons = sim.pumps.begin(sim, 3 - pump, 'VALVE_FAILURE');
@@ -58,11 +59,17 @@ export class PumpValves {
       const moving = direction === 'OPEN' || direction === 'CLOSE';
       const on = sim.outputs.value('pump' + pump + '.run') === true;
       // D-258: ожидаемая недоступность обесточенного привода не опровергает ручную отметку.
-      // Новые достоверные сведения против ручного положения — оставшаяся открытая граница D-177.
+      // Уточнение D-177, согласовано 15.11.2026: именно новое достоверное OPEN против ручного CLOSED.
       if (branch.valveBlocked && (branch.manualClosed || branch.manualOpen) &&
           branch.manualEvidencePosition !== position && ((branch.manualClosed && position === 'OPEN') || (branch.manualOpen && position === 'CLOSED'))) {
-        sim.gap('D-177: достоверный концевик против ручного подтверждения; реакция не согласована');
-        continue;
+        if (branch.manualClosed && ['STARTING', 'RUNNING', 'STOPPING'].includes(sim.state) && sim.outputs.value('pump' + (3 - pump) + '.run') === true) {
+          branch.manualClosed = false;
+          this.fail(sim, pump, 'VALVE_MANUAL_CLOSED_CONTRADICTED', 'Новое достоверное открытие затвора ' + pump + ' против ручного закрытия (уточнение D-177)');
+          sim.protection.beginStop(sim, 'D-177: ручное закрытие опровергнуто; обязательный останов через ШБ и ШТ');
+        } else {
+          sim.gap('D-177: противоречие ручному положению вне согласованного случая CLOSED → OPEN при работе другой ветви');
+          continue;
+        }
       }
       if (branch.manualClosed || branch.manualOpen) branch.manualEvidencePosition = position;
       if (branch.manualOpen === 'RUN' && (!on || position === 'OPEN')) branch.manualOpen = false;
@@ -72,7 +79,7 @@ export class PumpValves {
           this.fail(sim, pump, 'VALVE_CONTRADICTION', 'Противоречие концевиков затвора ' + pump + ' 5 с (D-168)');
           if (on && !pressureTrip) this.workingFailure(sim, pump);
         }
-        const steady = sim.state === 'RUNNING' && !sim.pumps.active && !moving && !pressureTrip;
+        const steady = sim.state === 'RUNNING' && !sim.pumps.active && !sim.recovery.active && !moving && !pressureTrip;
         const established = (steady || (sim.pumps.active?.to === pump && sim.pumps.active.openedAt !== null && !moving && !pressureTrip));
         const lostOpen = established && on && this.previous[pump] === 'OPEN' && position === 'INTERMEDIATE';
         const lostClosed = steady && !on && !branch.faults.length && !branch.exclusions.length && this.previous[pump] === 'CLOSED' && position === 'INTERMEDIATE';
@@ -112,7 +119,7 @@ export class PumpValves {
       }
       const wait = this.waits[pump];
       if (wait && !wait.suspended) {
-        wait.remaining = Math.max(0, wait.remaining - (sim.clock.now - wait.updatedAt));
+        if (wait.remaining !== null) wait.remaining = Math.max(0, wait.remaining - (sim.clock.now - wait.updatedAt));
         wait.updatedAt = sim.clock.now;
         if (wait.target === 'CLOSED' && position === 'CLOSED') delete this.waits[pump];
         else if (wait.remaining === 0) {
@@ -129,6 +136,11 @@ export class PumpValves {
     this.fail(sim, pump, code, 'Затвор ' + pump + ': ' + (contradiction ? 'противоречие 1/1 5 с' : desired + ' не подтверждено за 45 с'));
     sim.pumps.checkGroup(sim);
     if (sim.engineering.active) { sim.engineering.motionFailed(sim, pump); return; }
+    if (sim.recovery.owns(pump)) {
+      if (desired === 'CLOSE') return; // 45 с и резерв D-112 обслуживает владелец; 1/1 не продлевает исходный срок.
+      sim.gap('Специальное восстановление: отказ открытия выбранной ветви требует отдельного сценария; автоматический переход по одному таймауту не назначен');
+      return;
+    }
     if (sim.pumps.active?.from === pump || this.recoveries[pump]) return; // Их отдельные 45+60 с обслуживаются владельцем процедуры.
     if (sim.state === 'STARTING' && desired === 'OPEN' && sim.signals.position('valve' + pump) === 'INTERMEDIATE' &&
         !sim.pumps.branches[3 - pump].faults.length && !sim.pumps.branches[3 - pump].exclusions.length) {
