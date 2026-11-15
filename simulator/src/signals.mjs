@@ -23,6 +23,10 @@ export const DEFINITIONS = { // Названия, типы и единицы н�
   'emergency': ['Кнопка Авария нажата', 'bool'],
   'grid.normal': ['Норма сети — результат внешнего для v0.1 алгоритма', 'bool'],
   'temperature.normal': ['Температурные разрешения — тестовая предпосылка', 'bool'],
+  'temperature.fan': ['Перед дымососом: нормализованная температура', 'number', '°C'],
+  'temperature.supply': ['Подача: основной датчик, нормализованный', 'number', '°C'],
+  'temperature.backup': ['Подача: резерв TUF, нормализованный', 'number', '°C'],
+  'temperature.return': ['Обратка: нормализованная температура', 'number', '°C'],
   'cooling.required': ['Запрос охлаждения — тестовая предпосылка', 'bool'],
   'configuration.ready': ['Конфигурация/тесты/прочие разрешения — предпосылка', 'bool'],
 };
@@ -74,7 +78,10 @@ export class SignalStore {
       sample.lastGoodValue = value;
       sample.lastGoodRevision = sample.revision;
       sample.diagnosticSince = null;
-    } else if (quality === 'BAD' && sample.diagnosticSince === null) {
+    } else if (quality === 'BAD' && sample.diagnosticSince === null &&
+      (fresh || !['flow', 'temperature.backup'].includes(name))) {
+      // D-155: таймер TUF запускает новый полученный диагностический ответ,
+      // а не показ старой/несвежей ошибки. UNKNOWN и другой параметр его не сбрасывают.
       sample.diagnosticSince = this.clock.now;
     }
   }
@@ -86,19 +93,47 @@ export class SignalStore {
   }
   get(name) { return this.values[name]; } // name — условное имя входа.
   read(name) { // name — вход; null означает отсутствие пригодного значения.
+    if (name === 'cooling.required') { const derived = this.coolingRequest?.(); if (derived !== undefined) return derived; }
+    if (name === 'temperature.backup') return this.tuf(name).value;
     const sample = this.values[name]; // Последний образец данного входа.
     if (name === 'flow') return this.flow().value;
     return sample?.quality === 'GOOD' && sample.fresh ? sample.value : null;
   }
   flow() {
-    const sample = this.values.flow; // Только расход; резервная температура будет отдельным каналом.
-    const recent = sample.lastGoodAt !== null && this.clock.now - sample.lastGoodAt < 5000; // D-153: независимые 5 с актуальности.
-    const diagnosing = sample.diagnosticSince !== null; // Диагностика может приходить при исправной связи.
-    const diagnosticAlive = !diagnosing || this.clock.now - sample.diagnosticSince < 5000; // D-155: повторы ошибки не продлевают таймер.
+    return this.tuf('flow');
+  }
+  retainedTemperature(name) { // D-094: BAD/отсутствие ответа не освежают последнее корректное измерение.
+    const sample = this.values[name];
+    const usable = sample.lastGoodAt !== null && this.clock.now - sample.lastGoodAt < 5000;
+    return { value: usable ? sample.lastGoodValue : null, usable,
+      held: usable && (sample.quality !== 'GOOD' || !sample.fresh || sample.updatedAt !== this.clock.now),
+      lastGoodAt: sample.lastGoodAt, quality: sample.quality };
+  }
+  tuf(name) {
+    if (!['flow', 'temperature.backup'].includes(name)) throw new Error('Неизвестный нормализованный канал TUF');
+    const sample = this.values[name]; // D-153/D-155: отдельные данные и таймеры расхода/резервной температуры.
+    const freshnessDeadline = sample.lastGoodAt === null ? null : sample.lastGoodAt + 5000;
+    const diagnosticDeadline = sample.diagnosticSince === null ? null : sample.diagnosticSince + 5000;
+    const freshnessExpired = freshnessDeadline !== null && this.clock.now >= freshnessDeadline;
+    const diagnosticExpired = diagnosticDeadline !== null && this.clock.now >= diagnosticDeadline;
+    const recent = freshnessDeadline !== null && !freshnessExpired;
+    const diagnosing = diagnosticDeadline !== null;
+    const diagnosticAlive = !diagnosticExpired;
     const usable = recent && diagnosticAlive && sample.fresh && sample.quality !== 'UNKNOWN'; // UNKNOWN не превращается в нулевой расход.
+    // Оба срока проверяются в одном чтении: истёкший срок свежести никогда
+    // не получает ещё 5 с ожидания диагностики. Данные/выдержки каналов не объединяются.
+    const reasons = [];
+    if (sample.lastGoodAt === null) reasons.push('NO_CORRECT_VALUE');
+    if (freshnessExpired) reasons.push('FRESHNESS_EXPIRED');
+    if (diagnosticExpired) reasons.push('DIAGNOSTIC_EXPIRED');
+    if (!sample.fresh || sample.quality === 'UNKNOWN') reasons.push('EXPLICIT_UNUSABLE');
     return { value: usable ? sample.lastGoodValue : null,
       held: usable && (diagnosing || sample.updatedAt !== this.clock.now),
-      quality: sample.quality, usable, updatedAt: sample.updatedAt, lastGoodAt: sample.lastGoodAt };
+      quality: sample.quality, usable, updatedAt: sample.updatedAt, lastGoodAt: sample.lastGoodAt,
+      diagnosticSince:sample.diagnosticSince, diagnosing, freshnessDeadline, diagnosticDeadline,
+      freshnessExpired, diagnosticExpired,
+      freshnessRemainingMs:freshnessDeadline === null ? null : Math.max(0,freshnessDeadline-this.clock.now),
+      diagnosticRemainingMs:diagnosticDeadline === null ? null : Math.max(0,diagnosticDeadline-this.clock.now), reasons };
   }
   position(mechanism) { // mechanism — st, valve1 или valve2.
     const open = this.read(mechanism + '.open'); // Независимое подтверждение открытия.

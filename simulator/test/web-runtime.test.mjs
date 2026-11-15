@@ -12,7 +12,7 @@ async function client(sim){
  const elements=new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],{value:'',checked:false,disabled:false,hidden:false,textContent:'',innerHTML:'',querySelectorAll:()=>[]} ]));
  const document={activeElement:null,getElementById:id=>{assert.ok(elements.has(id),'Нет элемента '+id);return elements.get(id);},querySelectorAll:()=>[]};
  const fetch=async(url,options)=>{
-  if(options){const data=JSON.parse(options.body);if(data.type==='command')sim.command(data.action,data.value,data.procedureId);}
+  if(options){const data=JSON.parse(options.body);if(data.type==='command')sim.command(data.action,data.value,data.procedureId);if(data.type==='temperature_fixture')sim.loadTemperatureFixture();if(data.type==='water_fixture')sim.loadWaterFixture();}
   return {ok:true,json:async()=>sim.snapshot()};
  };
  const code=await readFile(new URL('../web/app.js',import.meta.url),'utf8');
@@ -51,4 +51,21 @@ test('HMI JS: D-164 требует отдельного подтверждени
  assert.ok(sim.cooling.manualClosed);assert.match(elements.get('cooling-manual-state').textContent,/подтверждено оператором/);
  sim.cooling.repeatWarning=true;api.replace(sim.snapshot());api.render();assert.equal(elements.get('cooling-repeat-warning').hidden,false);
  sim.sampleGroup('stOpen');api.replace(sim.snapshot());api.render();assert.equal(elements.get('cooling-st-checked').checked,false);
+});
+
+test('HMI JS: температурная исходная точка, ожидание/удержание, вода и отдельное предупреждение',async()=>{
+ const sim=new Simulation();const{api,elements}=await client(sim);await elements.get('temperature-fixture').onclick();
+ assert.equal(sim.temperature.enabled,true);assert.match(elements.get('temperature-state').textContent,/Ожидание первого/);assert.equal(elements.get('temperature-settings').disabled,true);
+ assert.match(elements.get('signals').innerHTML,/Вычислено по температурному профилю: Нет данных/);
+ sim.signals.set('temperature.fan',40);sim.signals.set('temperature.fan',999,'BAD');sim.signals.set('temperature.supply',60);sim.signals.set('temperature.backup',66);sim.signals.set('temperature.return',50);sim.tick();api.replace(sim.snapshot());api.render();
+ assert.match(elements.get('temperature-state').textContent,/Последнее достоверное/);assert.match(elements.get('temperature-water').textContent,/PRIMARY/);assert.match(elements.get('temperature-water').textContent,/ΔT: 10/);
+ sim.signals.set('temperature.fan',40);sim.advance(10000);api.replace(sim.snapshot());api.render();assert.equal(elements.get('temperature-warning').hidden,false);
+ sim.command('engineering_enter',true);api.replace(sim.snapshot());api.render();elements.get('temperature-clear').value='2';await elements.get('temperature-settings').onclick();assert.equal(sim.config.supplyDifferenceClear,2);
+});
+
+test('HMI JS: водяной профиль, раздельные сроки TUF, запрос теплоотвода без вымышленной обратной связи',async()=>{
+ const sim=new Simulation();const{api,elements}=await client(sim);await elements.get('water-fixture').onclick();assert.equal(sim.waterProtection.enabled,true);
+ sim.signals.set('temperature.supply',85);sim.signals.set('flow',8,'GOOD',true,false);sim.tick();sim.advance(3000);sim.signals.set('flow',999,'BAD',true,false);sim.tick();api.replace(sim.snapshot());api.render();
+ assert.match(elements.get('water-protection-state').textContent,/Теплоотвод: 1/);assert.match(elements.get('outputs').innerHTML,/Нет физической обратной связи/);
+ assert.match(elements.get('tuf-timers').textContent,/свежести 2.0 с; диагностики 5.0 с/);assert.equal(elements.get('water-settings').disabled,true);
 });

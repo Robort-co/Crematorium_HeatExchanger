@@ -2,7 +2,7 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.10 · восстановление при охлаждении</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.11 · температурные источники</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
@@ -100,4 +100,17 @@
 <section class="panel"><h2>Журнал событий</h2><p id="faults" class="warning"></p><div id="journal" class="journal" aria-live="polite"></div></section>
 <footer>Моделируются логические модули в одном процессе Node.js. Изоляция служб, systemd, реальные драйверы, NV, полный набор защит и инженерных тестов ещё не реализованы. Результат не подтверждает готовность шкафа или безопасный пуск.</footer>
 
+<section class="panel laboratory"><h2>Температурные источники</h2>
+<p class="hint">Отдельная исходная точка: ТО остановлен, ШТ закрыт, температура ещё не получена. GOOD означает нормализованное измерение в проверенном диапазоне; реальные AI и TUF не подключены. Прочие температурные разрешения остаются тестовой предпосылкой. Сохранение — только память процесса.</p>
+<button id="temperature-fixture">Имитировать ожидание температуры</button>
+<p id="temperature-state"></p><p id="temperature-water"></p><p id="temperature-warning" class="warning" hidden>Расхождение двух подач: предупреждение без запрета Пуска и без выбора неисправного датчика.</p>
+<p class="hint">Измерения задаются в таблице входов: temperature.fan / supply / backup / return. В этом профиле cooling.required вычисляется автоматически. Для проверки водяных защит отдельно загрузите водяной профиль ниже; температурная исходная точка сама его не включает.</p>
+<div class="buttons"><label>Включение охлаждения, °C <input id="temperature-on" type="number" min="30" max="130" value="70"></label><label>Выключение, °C <input id="temperature-off" type="number" min="30" max="130" value="50"></label><label>Перегрев дымососа, °C <input id="temperature-hot" type="number" min="140" max="200" value="170"></label><label>Снятие расхождения, °C <input id="temperature-clear" type="number" min="1" max="4.9" step="0.1" value="3"></label><button id="temperature-settings">Применить в инженерном режиме</button></div>
+</section>
+<section class="panel laboratory"><h2>Водяные защиты и сроки TUF</h2>
+<button id="water-fixture">Имитировать остановленный ТО с водяными защитами</button>
+<p class="hint">Исходные 40/60/60/50 °C — испытательные показания, не измерения объекта. Перегрев/потеря подачи запрещают новый Пуск; работающий ТО продолжает работу. Теплоотвод — только логический запрос, без подтверждения вентилятора или команды реальной котельной. Восстановление водяного профиля после reboot пока явно приостанавливает расчёт.</p>
+<p id="water-protection-state"></p><p id="water-protection-warnings"></p><p id="tuf-timers"></p>
+<div class="buttons"><label>Перегрев воды, °C <input id="water-hot" type="number" min="87" max="95" value="90"></label><label>Включение теплоотвода, °C <input id="water-removal-on" type="number" min="80" max="90" value="85"></label><label>Выключение теплоотвода, °C <input id="water-removal-off" type="number" min="75" max="90" value="80"></label><label>Предупреждение ΔT, °C <input id="water-delta-on" type="number" min="15" max="25" value="20"></label><label>Снятие ΔT, °C <input id="water-delta-off" type="number" min="15" max="25" value="19"></label><button id="water-settings">Применить в инженерном режиме</button></div>
+</section>
 </main></body></html>

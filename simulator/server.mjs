@@ -26,6 +26,8 @@ export function createSimulatorServer() {
         const data = JSON.parse(body); // Декларативное действие из фиксированного набора.
         if (data.generation !== sim.generation) throw new Error('Устаревшее окно: обновите состояние, команда не выполнена');
         if (data.type === 'fixture') sim.loadFixture();
+        else if (data.type === 'temperature_fixture') sim.loadTemperatureFixture();
+        else if (data.type === 'water_fixture') sim.loadWaterFixture();
         else if (data.type === 'cooling_fixture') sim.loadCoolingFixture(data.circulation === true);
         else if (data.type === 'recovery_fixture') sim.loadRecoveryFixture(data.pump);
         else if (data.type === 'restart') sim.restart({ downtimeMs: data.downtimeMs, savedStateReadable: data.savedStateReadable });
@@ -37,6 +39,7 @@ export function createSimulatorServer() {
         }
         else if (data.type === 'group') sim.sampleGroup(data.name);
         else if (data.type === 'signal') {
+          if (sim.temperature.enabled && data.name === 'cooling.required') throw new Error('В температурном профиле запрос вычисляется по температуре, ручная подмена запрещена');
           sim.signals.set(data.name, data.value, data.quality, data.fresh, data.repeat);
           sim.log('INPUT', data.name + ': задан образец испытателем');
           sim.tick();

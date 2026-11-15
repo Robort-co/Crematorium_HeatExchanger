@@ -233,6 +233,8 @@ export class Protection {
     sim.shutterTest.step(sim, request);
     sim.damperTest.step(sim, request);
     sim.fanTest.step(sim, request);
+    sim.temperature.enforce(sim, request); // D-021/D-094 не заменяют последующие самостоятельные запреты ПЧ.
+    sim.waterProtection.enforce(request); // Только запрос теплоотвода, без смены насосов или частоты ПЧ.
     if(sim.fanTest.coolingBlocked)request['shod.voltage']=10;
     sim.vfdGuard.enforce(request);
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);

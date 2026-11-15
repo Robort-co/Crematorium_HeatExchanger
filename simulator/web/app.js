@@ -30,6 +30,7 @@ async function act(data) { // data — одно действие из разре
 }
 
 function feedback(name) { // name — функция выхода; результат берётся только из независимых входов.
+  if (name === 'heatRemoval.request') return 'Нет физической обратной связи';
   if (name === 'shod.voltage') return text(snapshot.damperTest.raw) + ' В; положение ' + (snapshot.damperTest.corrected === null ? 'Нет данных' : Math.max(0, Math.min(100, snapshot.damperTest.corrected)).toFixed(1) + '%');
   if (name.startsWith('st.')) return positionLabels[snapshot.positions.st];
   if (name.startsWith('valve')) return positionLabels[snapshot.positions[name.split('.')[0]]];
@@ -45,6 +46,8 @@ function feedback(name) { // name — функция выхода; резуль�
 }
 
 function render() {
+  renderWaterProtection();
+  renderTemperature();
   renderEngineering();
   renderThermalTests();
   const group = snapshot.pumpGroup; // Состояние группы отдельно от отдельных выходов и входов.
@@ -131,10 +134,12 @@ function render() {
   });
   element('signals').innerHTML = Object.entries(snapshot.signals).map(([name, sample]) => {
     const definition = snapshot.definitions[name]; // Название, тип и единицы конкретного входа.
+    if (name === 'cooling.required' && snapshot.temperature.enabled) return '<tr data-name="cooling.required"><td>Расчётный запрос охлаждения<small>cooling.required</small></td><td colspan="5">Вычислено по температурному профилю: ' + escaped(snapshot.temperature.effectiveRequest) + '</td><td><button class="apply" disabled>Вычисляется по температуре</button></td></tr>';
     const input = definition[1] === 'bool' ? '<select class="value"><option value="true"' + (sample.value === true ? ' selected' : '') + '>1</option><option value="false"' + (sample.value === false ? ' selected' : '') + '>0</option><option value="null"' + (sample.value === null ? ' selected' : '') + '>Нет данных</option></select>' : '<input class="value" type="number" step="any" value="' + (sample.value ?? '') + '" placeholder="Нет данных">'; // Поле редактирования без автоматического применения.
     return '<tr data-name="' + name + '"><td>' + escaped(definition[0]) + '<small>' + name + (definition[2] ? ', ' + definition[2] : '') + '</small></td><td>' + input + '</td><td><select class="quality">' + ['GOOD', 'BAD', 'UNKNOWN'].map(quality => '<option' + (sample.quality === quality ? ' selected' : '') + '>' + quality + '</option>').join('') + '</select></td><td><input class="fresh" type="checkbox"' + (sample.fresh ? ' checked' : '') + '></td><td><input class="repeat" type="checkbox"' + (sample.repeat ? ' checked' : '') + '></td><td>' + seconds(sample.updatedAt) + ' / ' + seconds(sample.lastGoodAt) + '<small>Последнее достоверное: ' + escaped(sample.lastGoodValue) + '</small></td><td><button class="apply">Применить</button></td></tr>';
   }).join('');
   element('signals').querySelectorAll('tr').forEach(row => { // row — редактор одного независимого входа.
+    if (snapshot.temperature.enabled && row.dataset.name === 'cooling.required') { row.querySelector('.apply').disabled = true; row.querySelector('.apply').textContent = 'Вычисляется по температуре'; return; }
     row.querySelector('.apply').onclick = () => {
       const raw = row.querySelector('.value').value; // Строка формы до проверки типа.
       const value = snapshot.definitions[row.dataset.name][1] === 'bool' ? JSON.parse(raw) : raw === '' ? null : Number(raw); // Нормализованное значение либо null.
@@ -145,6 +150,23 @@ function render() {
   element('journal').innerHTML = [...snapshot.journal].reverse().map(event => '<div><time>' + seconds(event.at) + '</time><b>' + escaped(event.kind) + '</b>' + escaped(event.message) + '</div>').join('');
 }
 
+function renderWaterProtection() {
+  const w=snapshot.waterProtection;
+  const labels={PRIMARY_FAILED_WITH_BACKUP:'Отказ основного, резерв используется',RETURN_FAILED:'Нет температуры обратки'};
+  element('water-protection-state').textContent=w.enabled?'Перегрев воды: '+text(w.overheat)+' · Потеря подачи: '+text(w.supplyMissing)+' · Теплоотвод: '+text(w.removalRequested)+' · Предупреждение ΔT: '+text(w.deltaWarning)+(w.recoveryPending?' · Восстановление после reboot ожидает решения':''):'Водяной профиль выключен; используется прежняя тестовая предпосылка.';
+  element('water-protection-warnings').textContent=w.warnings.map(x=>labels[x]??x).join('; ');
+  element('tuf-timers').textContent=[['Расход',snapshot.telemetry.tuf.flow],['Резервная температура',snapshot.telemetry.tuf.backup]].map(([label,t])=>label+': '+text(t.value)+(t.held?' (последнее достоверное значение)':'')+' · до истечения свежести '+seconds(t.freshnessRemainingMs)+' с; диагностики '+seconds(t.diagnosticRemainingMs)+' с'+(t.freshnessExpired?' · свежесть истекла':'')+(t.diagnosticExpired?' · диагностическая выдержка истекла':'')).join(' | ');
+  element('water-settings').disabled=!snapshot.engineering.enabled||!snapshot.hmiAvailable||snapshot.state!=='STOPPED'||!!snapshot.coverageGap||w.overheat||w.thermalRemoval||!!(snapshot.engineering.active||snapshot.shutterTest.active||snapshot.damperTest.active||snapshot.fanTest.active);
+  for(const[id,key]of [['water-hot','waterOverheat'],['water-removal-on','waterRemovalOn'],['water-removal-off','waterRemovalOff'],['water-delta-on','deltaOn'],['water-delta-off','deltaOff']])if(document.activeElement!==element(id))element(id).value=snapshot.config[key];
+}
+function renderTemperature() {
+  const t=snapshot.temperature,w=t.water;
+  element('temperature-state').textContent=t.enabled ? 'Температура дымососа: '+text(t.fan.value)+' °C · '+({VALID:'Достоверна',WAIT_FIRST:'Ожидание первого измерения',INVALID:'Недостоверна'}[t.phase]??t.phase)+(t.fan.held?' · Последнее достоверное значение':'')+' · Сохранённый запрос: '+text(t.request)+' · Действующий допуск охлаждения: '+text(t.effectiveRequest)+' · Перегрев: '+text(t.overheat) : 'Температурный профиль не включён; используется отдельная испытательная предпосылка.';
+  element('temperature-water').textContent='Подача основная / резерв / обратка: '+[w.primary,w.backup,w.returned].map(text).join(' / ')+' °C · Источник расчёта: '+text(w.source)+' · ΔT: '+text(w.delta)+' °C · Максимум для защит: '+text(w.protectionMaximum)+' °C'+(w.backupStatus?.held?' · Резерв: последнее достоверное; проверка неисправности/актуальности':'');
+  element('temperature-warning').hidden=!t.differenceWarning;
+  element('temperature-settings').disabled=!snapshot.engineering.enabled||!snapshot.hmiAvailable||!!snapshot.coverageGap;
+  for(const[id,key]of [['temperature-on','coolingOn'],['temperature-off','coolingOff'],['temperature-hot','fanOverheat'],['temperature-clear','supplyDifferenceClear']])if(document.activeElement!==element(id))element(id).value=snapshot.config[key];
+}
 function renderEngineering() {
   const blocked = !snapshot.hmiAvailable || !!snapshot.coverageGap;
   const engineering = snapshot.engineering; // Состояние серверного сеанса; обновление окна не запускает тест заново.
@@ -236,6 +258,10 @@ element('fan-bounds-set').onclick = () => act({type:'command',action:'engineerin
 element('cooling-restore').onclick = () => act({type:'command',action:'engineering_cooling_restore',value:{inspected:element('fan-inspected').checked,causeRemoved:element('fan-cause-removed').checked,workFinished:element('fan-work-finished').checked,allowAutomatic:element('fan-allow-automatic').checked}});
 element('vfd-reset').onclick = () => act({type:'command',action:'engineering_vfd_reset',value:element('vfd-repaired').checked});
 element('cooling-fixture').onclick = () => act({type:'cooling_fixture',circulation:false});
+element('temperature-fixture').onclick = () => act({type:'temperature_fixture'});
+element('water-fixture').onclick = () => act({type:'water_fixture'});
+element('water-settings').onclick = () => act({type:'command',action:'engineering_water_settings',value:{waterOverheat:Number(element('water-hot').value),waterRemovalOn:Number(element('water-removal-on').value),waterRemovalOff:Number(element('water-removal-off').value),deltaOn:Number(element('water-delta-on').value),deltaOff:Number(element('water-delta-off').value)}});
+element('temperature-settings').onclick = () => act({type:'command',action:'engineering_temperature_settings',value:{coolingOn:Number(element('temperature-on').value),coolingOff:Number(element('temperature-off').value),fanOverheat:Number(element('temperature-hot').value),supplyDifferenceClear:Number(element('temperature-clear').value)}});
 element('cooling-pump-fixture').onclick = () => act({type:'cooling_fixture',circulation:true});
 element('cooling-st-confirm').onclick = () => act({type:'command',action:'confirm_st_closed_for_cooling',value:element('cooling-st-checked').checked});
 

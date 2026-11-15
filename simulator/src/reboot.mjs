@@ -22,7 +22,7 @@ export class RebootRecovery {
   }
   initialRequests(sim) {
     const request = {};
-    if (!this.readable) return request;
+    if (!this.readable && !sim.temperature.enabled) return request;
     request['vfd.enable'] = false; // D-093: проводное разрешение не ждёт доступности рабочего обмена.
     if (sim.signals.read('vfd.exchange') === true) {
       // D-093/D-103: до нового допуска/подтверждения останова прежний Пуск не возвращается.
@@ -32,6 +32,7 @@ export class RebootRecovery {
       request['shod.voltage'] = sim.signals.read('cooling.required') === false && !sim.fanTest.coolingBlocked && !sim.vfdGuard.blocked ? 0 : 10;
     }
     const phases=[1,2].map(pump=>sim.signals.phases(pump));
+    if (!this.readable) return request; // D-093 задаёт только дымосос/ШОД, не неизвестные насосные команды.
     const oneRunning=phases.filter(p=>p?.every(Boolean)).length===1 && phases.filter(p=>p?.every(value=>!value)).length===1;
     if(!this.initialOffAccepted && this.savedState==='STOPPED' && sim.signals.position('st')==='CLOSED' && sim.signals.read('cooling.required')===true && oneRunning){
       this.initialOffAccepted=true;
