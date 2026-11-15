@@ -23,7 +23,7 @@ export class VfdGuard {
     sim.protection.fault(sim, code, text);
   }
   step(sim) {
-    if (sim.state !== 'STOPPED') return; // Рабочие/пусковые профили пока имеют прежний отдельный охват.
+    if (!sim.cooling.supported(sim) && !(sim.state===null && sim.boot.readable)) return; // Обычные RUN/START/STOP пока имеют отдельный охват.
     const command = sim.outputs.commands['vfd.run'], running = sim.signals.read('vfd.running');
     if (!command || sim.signals.read('vfd.exchange') !== true || sim.signals.read('vfd.fault') !== false) return;
     if(command.value==='START')this.stoppedOnce=false; // Новый принятый запрос уже отличает выбег от неожиданного пуска после STOP.

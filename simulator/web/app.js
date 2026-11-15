@@ -3,6 +3,7 @@ let snapshot = null; // Последний снимок тестового ми�
 let busy = false; // Не допускаем одновременные действия одного клиента.
 let renderedMode = null; // Последний показанный режим: при переходе на ручной поле получает фактически выданное задание D-267.
 let renderedGeneration = null; // Новая фикстура/перезапуск не оставляет значение поля от прежнего тестового мира.
+let renderedCoolingManual = false; // После отмены/перезагрузки отметка местной проверки не остаётся заранее выбранной.
 const sourceLabels = { MANUAL: 'Ручное HMI', FMIN: 'Fmin до первой записи', ARANGA: 'ARANGA', HOLD: 'Удержание после потери ARANGA', LOCAL: 'Местная корректировка', STOP_COOLING: 'Останов: частота охлаждения', STOP_ARANGA: 'Прерванный запуск: новая запись ARANGA', STARTUP_LINK_FALLBACK: 'Прерванный запуск: аварийная частота', FMIN_OR_INACTIVE: 'Запуск / вне рабочего управления' }; // Источник задания отличается от наличия связи.
 const stateLabels = { STOPPED: 'Остановлен', STARTING: 'Запуск', RUNNING: 'В работе', STOPPING: 'Останов' }; // Четыре основных состояния; null отображается отдельно.
 const stageLabels = { IDLE: 'Исходная точка', OPEN_ST: 'Открытие ШТ', CLOSE_VALVES: 'Закрытие обоих затворов', PUMP_ON: 'Включение насоса', OPEN_VALVE: 'Открытие рабочей ветви', CIRCULATION: 'Проверка циркуляции / ШБ', COMPLETE: 'Процедура завершена', WAIT_BYPASS: 'Ожидание открытия ШБ', CLOSE_ST: 'Закрытие ШТ', CLOSE_PUMP: 'Закрытие рабочего затвора', FINAL_OUTPUTS: 'Команды положений останова' }; // Названия подэтапов, не дополнительных состояний ТО.
@@ -204,6 +205,8 @@ function renderThermalTests() {
   const damper = snapshot.damperTest, fan = snapshot.fanTest, cooling = snapshot.cooling;
   const locked = !snapshot.hmiAvailable || !!snapshot.coverageGap || !snapshot.engineering.enabled;
   const active = !!(snapshot.engineering.active || snapshot.shutterTest.active || damper.active || fan.active);
+  if(renderedGeneration!==snapshot.generation || renderedCoolingManual && !cooling.manualClosed)element('cooling-st-checked').checked=false;
+  renderedCoolingManual=!!cooling.manualClosed;
   const labels = { PASSED: 'Пройдено', FAILED: 'Не пройдено', NOT_CHECKED: 'Не проверено' };
   const fanStages = { PREPARE_STOP: 'Подтверждение предварительного останова', RAMP: 'Нарастание задания', TRACK: 'Ожидание частоты', HOLD: 'Ожидание инженера', WAIT_STOP: 'Подтверждение конечного останова' };
   element('shod-test-state').textContent = (damper.active ? 'Цель ' + damper.active.targets[damper.active.index] + '%' : damper.result ? labels[damper.result.result] + ': ' + damper.result.reason : 'ШОД ещё не проверен') + ' · Обратная связь ' + text(damper.raw) + ' В; скорректировано для диагностики ' + text(damper.corrected) + '%';
@@ -211,6 +214,9 @@ function renderThermalTests() {
   element('fan-test-state').textContent = fan.active ? fanStages[fan.active.stage] + ' · Ступень ' + fan.active.targets[fan.active.index] + ' Гц · Задание ' + text(snapshot.outputs['vfd.frequency']?.value) + ' Гц · Факт ' + feedback('vfd.frequency') + ' Гц' : fan.result ? labels[fan.result.result] + ': ' + fan.result.reason : 'Дымосос ещё не проверен';
   element('fan-blocks').textContent = 'Запрет обычного пуска: ' + text(fan.ordinaryBlocked) + '; требуется тест диапазона: ' + text(fan.rangeRequired) + '; запрет охлаждения: ' + text(fan.coolingBlocked) + '; самостоятельная блокировка ПЧ: ' + text(snapshot.vfdGuard.blocked);
   element('cooling-state').textContent = 'Запрос охлаждения: ' + text(snapshot.telemetry.cooling.requested) + ' · ' + ({IDLE:'Не требуется',WAITING:'Ожидает разрешений',WAIT_STOP:'Ожидает подтверждения останова',TEST_OWNS_FAN:'Дымососом управляет проверка',COOLING:'Выдан запрос охлаждения'}[cooling.phase] ?? cooling.phase) + (cooling.reasons.length ? ' · ' + cooling.reasons.join('; ') : '');
+  element('cooling-repeat-warning').hidden = !cooling.repeatWarning;
+  element('cooling-manual-state').textContent = cooling.manualClosed ? 'Закрытие ШТ подтверждено оператором для текущего охлаждения; неисправность сохраняется.' : 'Отдельного местного подтверждения закрытия ШТ для охлаждения нет.';
+  element('cooling-st-confirm').disabled = !snapshot.hmiAvailable || !!snapshot.coverageGap || active || snapshot.state !== 'STOPPED' || snapshot.telemetry.cooling.requested !== true || snapshot.outputs['st.power']?.value !== false || snapshot.outputs['st.direction']?.value !== 'STOP';
   element('shod-test-start').disabled = element('fan-test-start').disabled = locked || active || snapshot.engineeringCycle.pending;
   element('shod-k-set').disabled = locked || !!damper.active;
   for (const [id, value] of [['shod-k',snapshot.config.shodK],['fan-rate',snapshot.config.fanTestRate],['fan-min',snapshot.config.fmin],['fan-max',snapshot.config.fmax]]) if (document.activeElement !== element(id)) element(id).value = value;
@@ -231,6 +237,7 @@ element('cooling-restore').onclick = () => act({type:'command',action:'engineeri
 element('vfd-reset').onclick = () => act({type:'command',action:'engineering_vfd_reset',value:element('vfd-repaired').checked});
 element('cooling-fixture').onclick = () => act({type:'cooling_fixture',circulation:false});
 element('cooling-pump-fixture').onclick = () => act({type:'cooling_fixture',circulation:true});
+element('cooling-st-confirm').onclick = () => act({type:'command',action:'confirm_st_closed_for_cooling',value:element('cooling-st-checked').checked});
 
 for (const pump of [1, 2]) { // pump — номер насоса из отдельной подписанной кнопки.
   element('switch-pump-' + pump).onclick = () => act({ type: 'command', action: 'switch_pump', value: pump });

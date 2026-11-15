@@ -164,10 +164,12 @@ export class Simulation {
     const savedState = this.state ?? (this.boot.readable ? this.boot.savedState : null); // Повторный reboot не превращает непрочитанный снимок в достоверный.
     const savedPressure = structuredClone(this.pressure);
     const savedSelected = this.selectedPump;
+    const savedProcedureId = this.procedureId;
     const savedConfig = structuredClone(this.config);
     const savedShutterTest = structuredClone(this.shutterTest);
     const savedEngineeringCycle = structuredClone(this.engineeringCycle);
     const savedDamper = structuredClone(this.damperTest), savedFan = structuredClone(this.fanTest);
+    const savedCooling = structuredClone(this.cooling);
     const savedVfdBlock = { blocked:this.vfdGuard.blocked, causes:[...this.vfdGuard.causes] };
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
@@ -186,6 +188,7 @@ export class Simulation {
     }
     this.clock.advance(downtimeMs); // Только заданный испытателем простой; таймеры ручного ожидания в это время не идут.
     this.resetRuntime();
+    this.procedureId = savedProcedureId + 1; // Даже внутри процесса старый контекст не совпадёт с новым после reboot.
     this.boot.begin(savedState, savedStateReadable);
     if (!savedStateReadable) { this.log('RESTART', 'Имитируется непрочитанный снимок: состояние и блокировки неизвестны, автоматика восстановления запрещена'); this.tick(); return; }
     Object.assign(this.pressure, savedPressure);
@@ -194,6 +197,7 @@ export class Simulation {
     this.shutterTest.restoreSnapshot(savedShutterTest, this.clock.now);
     this.engineeringCycle.restoreSnapshot(savedEngineeringCycle, this);
     this.damperTest.restoreSnapshot(savedDamper,this); this.fanTest.restoreSnapshot(savedFan,this);
+    this.cooling.restoreSnapshot(savedCooling,this);
     Object.assign(this.vfdGuard,savedVfdBlock); // Старые подтверждения/таймеры ПЧ не являются новыми после reboot.
     this.selectedPump = savedSelected;
     this.config.flowControl = savedFlowControl;
@@ -312,6 +316,9 @@ export class Simulation {
     if (procedureId !== this.procedureId) record.reasons.push('Устаревший контекст процедуры: подтверждение не принято');
     else if (this.coverageGap) record.reasons.push('Расчёт модели приостановлен вне реализованного охвата');
     else if (!this.hmiAvailable()) record.reasons.push('Нет доступной HMI');
+    else if(action==='confirm_st_closed_for_cooling'){
+      record.reasons=this.cooling.confirmClosed(this,value);if(!record.reasons.length)record.result='ACCEPTED';
+    }
     else if (action.startsWith('engineering_')) {
       const handlers = {
         engineering_enter: () => this.engineering.enter(this, value),
@@ -426,7 +433,7 @@ export class Simulation {
     // Только явно включённый генератор успешных чтений; частоту и команды он не воспроизводит.
     if (this.exchange.aranga && (this.aranga.lastSuccessAt === null || this.clock.now - this.aranga.lastSuccessAt >= 500)) this.aranga.receive(this, 'read');
     if (this.state !== null) {
-      const thermalProfile=this.shutterTest.active||this.damperTest.active||this.fanTest.active||this.state==='STOPPED'&&this.signals.read('cooling.required')===true;
+      const thermalProfile=this.shutterTest.active||this.damperTest.active||this.fanTest.active||this.cooling.supported(this)&&this.signals.read('cooling.required')===true;
       if(thermalProfile&&(this.signals.read('emergency')!==false||!this.mainEnabled||!this.supervisionEnabled||this.signals.read('configuration.ready')!==true)){
         this.gap('Сочетание теплового инженерного профиля с аварийным входом, потерей управления или подтверждения конфигурации ещё не реализовано');
         return;
@@ -438,7 +445,7 @@ export class Simulation {
         return;
       }
       if (this.signals.read('grid.normal') !== true || this.signals.read('temperature.normal') !== true ||
-          (this.signals.read('cooling.required') === null || this.signals.read('cooling.required') === true && this.state !== 'STOPPED') || this.signals.read('vfd.fault') !== false ||
+          (this.signals.read('cooling.required') === null && this.boot.phase!=='RESTORED' || this.signals.read('cooling.required') === true && !this.cooling.supported(this)) || this.signals.read('vfd.fault') !== false ||
           this.signals.read('vfd.exchange') !== true) {
         if (this.signals.read('grid.normal') === false) this.pumps.cancelClassificationForGrid(this);
         if (this.engineering.active) {
@@ -507,7 +514,7 @@ export class Simulation {
         missingBoth: this.pressure.missingBoth, requireBoth: this.pressure.requireBoth, restartBlocked: this.pressure.restartBlocked, stopCauses: this.pressure.stopCauses },
       recoveryAfterRestart: { phase: this.boot.phase, storage: this.boot.storage, needsContinue: this.protection.needsRestartContinue && !this.protection.restartContinued },
       shutterTest: { required: this.shutterTest.required, incomplete: this.shutterTest.incomplete, result: this.shutterTest.result },
-      cooling: { requested:this.signals.read('cooling.required'),phase:this.cooling.phase,blocked:this.fanTest.coolingBlocked||this.vfdGuard.blocked,reasons:this.cooling.reasons },
+      cooling: { requested:this.signals.read('cooling.required'),lastKnownRequest:this.cooling.lastKnownRequest,phase:this.cooling.phase,blocked:this.fanTest.coolingBlocked||this.vfdGuard.blocked,reasons:this.cooling.reasons,manualClosed:!!this.cooling.manualClosed,repeatWarning:this.cooling.repeatWarning,repeatEvents:this.cooling.repeatEvents.length },
       fanTest: { ordinaryBlocked:this.fanTest.ordinaryBlocked,rangeRequired:this.fanTest.rangeRequired,result:this.fanTest.result },
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',

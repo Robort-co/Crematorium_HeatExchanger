@@ -10,6 +10,7 @@ export class RebootRecovery {
   reasons = [];
   circulationPending = false;
   circulationRestored = false;
+  initialOffAccepted = false; // Узкое согласование 15.11: STOPPED/CLOSED/охлаждение, одна ветвь 111, другая 000.
   begin(state, readable) {
     this.savedState = state;
     this.readable = readable && ['STOPPED', 'STOPPING', 'STARTING', 'RUNNING'].includes(state);
@@ -22,15 +23,26 @@ export class RebootRecovery {
   initialRequests(sim) {
     const request = {};
     if (!this.readable) return request;
-    if (sim.signals.read('cooling.required') === false && sim.signals.read('vfd.exchange') === true) {
-      request['vfd.run'] = 'STOP'; request['vfd.enable'] = false; // D-080/D-150: обычный дымосос не возвращается автоматически; охлаждение вне этого профиля.
+    request['vfd.enable'] = false; // D-093: проводное разрешение не ждёт доступности рабочего обмена.
+    if (sim.signals.read('vfd.exchange') === true) {
+      // D-093/D-103: до нового допуска/подтверждения останова прежний Пуск не возвращается.
+      request['vfd.run'] = 'STOP'; request['vfd.enable'] = false;
     }
-    if ([1, 2].every(pump => sim.signals.phases(pump)?.every(value => !value))) {
+    if (sim.signals.read('grid.normal') === true) {
+      request['shod.voltage'] = sim.signals.read('cooling.required') === false && !sim.fanTest.coolingBlocked && !sim.vfdGuard.blocked ? 0 : 10;
+    }
+    const phases=[1,2].map(pump=>sim.signals.phases(pump));
+    const oneRunning=phases.filter(p=>p?.every(Boolean)).length===1 && phases.filter(p=>p?.every(value=>!value)).length===1;
+    if(!this.initialOffAccepted && this.savedState==='STOPPED' && sim.signals.position('st')==='CLOSED' && sim.signals.read('cooling.required')===true && oneRunning){
+      this.initialOffAccepted=true;
+      sim.log('BOOT_PUMP_OFF','Принят OFF обоим насосам при новых 111/000 после reboot; далее прежняя диагностика напряжения после OFF. Согласование 15.11');
+    }
+    if (this.initialOffAccepted || phases.every(p=>p?.every(value=>!value))) {
       for (const pump of [1, 2]) {
         request['pump' + pump + '.run'] = false;
         request['valve' + pump + '.direction'] = 'STOP';
       }
-    } // При 111/частичных/неизвестных фазах новая начальная команда насосу здесь не изобретается.
+    } // Иные исходные фазы не получают нового допуска; уже принятый OFF не отменяется.
     return request;
   }
   restoreState(sim) {
@@ -38,9 +50,11 @@ export class RebootRecovery {
     const reasons = [];
     if (sim.protection.elapsed(sim, 'bootGridNormal', sim.signals.read('grid.normal') === true) < 5000) reasons.push('Нет 5 с непрерывной нормы сети после загрузки (D-051)');
     for (const name of ['temperature.normal', 'configuration.ready', 'vfd.exchange']) if (sim.signals.read(name) !== true) reasons.push('Нет нового допуска: ' + name);
-    if (sim.signals.read('cooling.required') !== false) reasons.push('Профиль восстановления с охлаждением пока не реализован');
+    // Неизвестный температурный запрос не разрешает дымосос, но по D-093 не мешает
+    // восстановить независимую циркуляцию незавершённого останова при её разрешениях.
+    if (this.savedState === 'STOPPED' && sim.signals.read('cooling.required') === null) reasons.push('Ожидание нового нормализованного запроса охлаждения');
     if (sim.signals.read('vfd.fault') !== false || sim.signals.read('emergency') === null) reasons.push('Нет новых данных об авариях');
-    if (![1, 2].every(pump => sim.engineering.off(sim, pump))) reasons.push('Нужны обе команды OFF и новые 000; восстановление при иных фазных состояниях вне профиля');
+    if (![1, 2].every(pump => sim.engineering.off(sim, pump))) reasons.push(this.initialOffAccepted?'OFF уже выдан; нужны новые 000 и выполнение диагностики напряжения после OFF':'Нужны обе команды OFF и новые 000; исходное сочетание вне согласованного допуска');
     const stop = sim.outputs.commands['vfd.run'];
     if (stop?.value !== 'STOP' || stop.delivery !== 'ACCEPTED' || sim.signals.read('vfd.running') !== false || sim.signals.get('vfd.running').lastGoodRevision <= stop.deliveryInputRevision) reasons.push('Нет принятого STOP ПЧ и нового ответа Работа=0');
     if (this.savedState === 'STOPPED' && sim.signals.position('st') !== 'CLOSED') reasons.push('Для сохранённого останова нужно новое достоверное закрытие ШТ');

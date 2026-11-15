@@ -76,9 +76,8 @@ export class Protection {
       if (sim.signals.position('st') === 'CLOSED' || (this.stBlocked && this.manualStClosed)) {
         this.stopStage = 'CLOSE_PUMP';
         request['st.direction'] = 'STOP';
-        request['vfd.run'] = 'STOP';
-        request['vfd.enable'] = false;
-        sim.log('STAGE', 'ШТ закрыт: останов ПЧ без запроса охлаждения и закрытие рабочего затвора');
+        if(!sim.cooling.supported(sim)) {request['vfd.run'] = 'STOP';request['vfd.enable'] = false;}
+        sim.log('STAGE', 'ШТ закрыт: закрытие рабочего затвора; охлаждение после reboot сохраняет собственные разрешения');
       }
     }
     if (this.stopStage === 'CLOSE_PUMP') {
@@ -152,12 +151,21 @@ export class Protection {
     return desired;
   }
   step(sim) { // sim — модель, от которой берутся только условные входы/запросы.
+    sim.cooling.observeCirculation(sim); // Новые OPEN+5 с отсчитываются уже при сборе входов после reboot.
+    sim.cooling.observeManual(sim);
+    sim.cooling.updateHistory(sim);
     if (sim.state === null) {
-      // D-162: только известные команды инициализации ШТ; другим механизмам общий OFF не изобретается.
+      // Только определённые команды инициализации; насосный OFF при 111 имеет отдельный узкий допуск.
       this.emit(sim, 'st.direction', 'STOP');
       this.emit(sim, 'st.power', sim.boot.stPower(sim));
       const initial = sim.boot.initialRequests(sim); // Только определённые текущими входами запросы модели восстановления.
       for (const [name, value] of Object.entries(initial)) this.emit(sim, name, value);
+      if(sim.boot.initialOffAccepted){
+        if(sim.signals.read('grid.normal')===true)sim.pumps.diagnose(sim,initial,false);
+        else for(const pump of [1,2])this.elapsed(sim,'pumpUnexpected'+pump,false);
+      }
+      sim.vfdGuard.step(sim); // D-103: новый STOP и новый срок 30 с даже в ожидании остальных входов.
+      if(sim.vfdGuard.blocked && sim.signals.read('grid.normal')===true)this.emit(sim,'shod.voltage',10);
       sim.request = { ...sim.request, ...initial, 'st.direction': 'STOP', 'st.power': sim.boot.stPower(sim) };
       sim.boot.restoreState(sim);
       this.lastCycleAt = sim.clock.now;
@@ -167,7 +175,6 @@ export class Protection {
     const p1 = sim.signals.read('pressure.before'); // Достоверное абсолютное давление до НГ или null.
     const p2 = sim.signals.read('pressure.after'); // Достоверное абсолютное давление после НГ или null.
     sim.pressure.update(sim);
-    sim.cooling.observeCirculation(sim);
     sim.vfdGuard.step(sim);
     const stoppedCooling = sim.state==='STOPPED' && sim.signals.read('cooling.required')===true && !sim.shutterTest.active;
     if(!this.stBlocked && (stoppedCooling && sim.signals.position('st')==='OPEN' || this.elapsed(sim,'stCoolingLostClosed',stoppedCooling && sim.signals.position('st')==='INTERMEDIATE')>=5000)) {
@@ -273,6 +280,7 @@ export class Protection {
     this.lastCycleAt = sim.clock.now;
   }
   emit(sim, name, value) {
+    if(sim.outputs.value(name)!==value)sim.cooling.issued(sim,name,value);
     if (name.startsWith('valve') && ['OPEN', 'CLOSE'].includes(value) && sim.outputs.value(name) !== value) {
       const branch = sim.pumps.branches[Number(name[5])]; // Только действительно выданное новое движение снимает ручное положение D-177.
       branch.manualClosed = false; branch.manualOpen = false;

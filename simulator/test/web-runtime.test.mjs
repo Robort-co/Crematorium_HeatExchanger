@@ -42,3 +42,13 @@ test('HMI JS: вход инженера при охлаждении разреш
  const sim=cooling(false);sim.engineering.enabled=false;const {elements}=await client(sim);
  assert.equal(elements.get('engineering-enter').disabled,false);assert.match(elements.get('cooling-state').textContent,/Запрос охлаждения: 1/);
 });
+
+test('HMI JS: D-164 требует отдельного подтверждения оператора и показывает его отдельно от концевиков',async()=>{
+ const sim=cooling(false);sim.engineering.enabled=false;sim.protection.stBlocked=true;sim.signals.set('st.closed',false);sim.tick();
+ const {api,elements}=await client(sim);assert.equal(elements.get('cooling-st-confirm').disabled,false);
+ await elements.get('cooling-st-confirm').onclick();assert.equal(sim.cooling.manualClosed,null);
+ elements.get('cooling-st-checked').checked=true;await elements.get('cooling-st-confirm').onclick();
+ assert.ok(sim.cooling.manualClosed);assert.match(elements.get('cooling-manual-state').textContent,/подтверждено оператором/);
+ sim.cooling.repeatWarning=true;api.replace(sim.snapshot());api.render();assert.equal(elements.get('cooling-repeat-warning').hidden,false);
+ sim.sampleGroup('stOpen');api.replace(sim.snapshot());api.render();assert.equal(elements.get('cooling-st-checked').checked,false);
+});
