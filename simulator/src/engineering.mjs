@@ -26,6 +26,7 @@ export class Engineering {
   }
   commonReasons(sim) {
     const reasons = [];
+    if (sim.shutterTest.active) reasons.push('Сначала завершите проверку ШТ');
     if (!this.enabled || !this.furnaceOff) reasons.push('Нужен инженерный сеанс с явной предпосылкой «печь выключена»');
     if (sim.state !== 'STOPPED') reasons.push('ТО должен быть остановлен');
     if (!sim.hmiAvailable()) reasons.push('Нет управляющей HMI');
@@ -50,7 +51,7 @@ export class Engineering {
     return [];
   }
   leave(sim) {
-    if (!this.enabled || this.active) return ['Завершите текущую попытку с подтверждённым OFF'];
+    if (!this.enabled || this.active || sim.shutterTest.active) return ['Завершите текущую попытку с подтверждённым OFF/снятыми направлениями ШТ'];
     if (Object.values(this.returnRequired).some(Boolean) || Object.values(this.breakerOffRequired).some(Boolean)) return ['Завершите обязательные ручные действия'];
     if (Object.values(sim.valves.waits).some(wait => wait.source === 'ENGINEERING_OPEN')) return ['Подтвердите ручное открытие неисправного затвора после проверки'];
     this.enabled = false; this.furnaceOff = false;
@@ -78,7 +79,7 @@ export class Engineering {
   }
   confirmReturn(sim, pump) {
     if (![1, 2].includes(pump) || !this.returnRequired[pump]) return ['Нет обязанности возврата этого крана'];
-    if (this.active || !this.off(sim, 1) || !this.off(sim, 2)) return ['Сначала подтвердите выключение насосов и завершение попытки'];
+    if (this.active || sim.shutterTest.active || !this.off(sim, 1) || !this.off(sim, 2)) return ['Сначала подтвердите выключение насосов и завершение попытки'];
     this.returnRequired[pump] = false;
     if (this.manualIsolation?.pump === pump) this.manualIsolation = null;
     sim.log('MANUAL_RETURN', 'Полное открытие нижнего крана ветви ' + pump + ' проверено и подтверждено инженером; ошибки сохранены');
@@ -90,7 +91,7 @@ export class Engineering {
     const reasons = this.commonReasons(sim);
     const branch = sim.pumps.branches[pump];
     const other = 3 - pump;
-    if (this.active) reasons.push('Насосная группа занята текущей попыткой');
+    if (this.active || sim.shutterTest.active) reasons.push('Механизм занят текущей инженерной попыткой');
     if (Object.values(sim.valves.waits).some(wait => wait.source === 'ENGINEERING_OPEN')) reasons.push('Завершите ручное открытие после предыдущей попытки');
     if (!this.off(sim, 1) || !this.off(sim, 2)) reasons.push('Требуются обе команды OFF и новые достоверные 000');
     if (Object.values(this.breakerOffRequired).some(Boolean)) reasons.push('Сначала подтвердите требуемое отключение автомата привода');

@@ -144,13 +144,29 @@ function render() {
 
 function renderEngineering() {
   const engineering = snapshot.engineering; // Состояние серверного сеанса; обновление окна не запускает тест заново.
+  const shutter = snapshot.shutterTest, cycle = snapshot.engineeringCycle;
+  const engineeringBusy = !!engineering.active || !!shutter.active;
+  element('st-test-state').textContent = (shutter.active ? 'Этап ШТ: ' + shutter.active.stage : shutter.result ? shutter.result.reason : 'ШТ ещё не проверен') + (shutter.required ? ' · Полный тест обязателен перед Пуском.' : '');
+  element('st-test-start').disabled = blocked || !engineering.enabled || engineeringBusy || cycle.pending;
+  element('st-restore-power').disabled = blocked || engineeringBusy || !snapshot.stBlocked;
+  element('st-release-set').disabled = blocked || !engineering.enabled || engineeringBusy;
+  if (document.activeElement !== element('st-release-time')) element('st-release-time').value = snapshot.config.stReleaseSeconds;
+  const names = { BRANCH_1: 'Ветвь 1', BRANCH_2: 'Ветвь 2', ST: 'ШТ', SHOD: 'ШОД', FAN: 'Дымосос' };
+  const phases = { IDLE: 'Не начат', WAITING: 'Ожидает отдельного продолжения', ACTIVE: 'Выполняется тест', COMPLETE: 'Список завершён; результаты ниже', CANCELLED: 'Отменён' };
+  element('engineering-cycle-state').textContent = (phases[cycle.phase] ?? cycle.phase) + (cycle.current ? ' · ' + names[cycle.running?.key ?? cycle.current] : '');
+  element('engineering-cycle-results').textContent = Object.entries(cycle.results).map(([key,result]) => names[key] + ': ' + ({PASSED:'Пройдено',FAILED:'Не пройдено',NOT_CHECKED:'Не проверено'}[result.result] ?? result.result) + ' — ' + result.reason).join('; ');
+  element('engineering-cycle-begin').disabled = blocked || !engineering.enabled || engineeringBusy || cycle.pending;
+  element('engineering-cycle-continue').disabled = blocked || !engineering.enabled || cycle.phase !== 'WAITING';
+  element('engineering-cycle-skip').disabled = blocked || !engineering.enabled || cycle.phase !== 'WAITING';
+  element('engineering-cycle-cancel').disabled = blocked || !cycle.pending;
+  element('engineering-cycle-repeat').disabled = blocked || !engineering.enabled || engineeringBusy || !['WAITING','COMPLETE','CANCELLED'].includes(cycle.phase);
   const blocked = !snapshot.hmiAvailable || !!snapshot.coverageGap;
   const labels = { PASSED: 'Пройдено', FAILED: 'Не пройдено', NOT_CHECKED: 'Не проверено' };
   const stages = { PREPARE_OPEN: 'Подготовительное открытие', PREPARE_CLOSED: 'Подготовительное закрытие', CLOSE: 'Проверочное закрытие', BREAK_OPEN: 'Команда снята, подготовка открытия', BREAK_CLOSE: 'Команда снята, подготовка закрытия', OPEN: 'Проверочное открытие', PUMP_ON: 'Включение насоса / задержка 1 с', HYDRAULICS: 'Открытие подтверждено, оценка Q и ΔP через 5 с', WAIT_OFF: 'Ожидание нового подтверждения выключения' };
-  element('engineering-state').textContent = engineering.enabled ? (engineering.active ? 'Ветвь ' + engineering.active.pump + ' · ' + (stages[engineering.active.stage] ?? engineering.active.stage) : 'Инженерный режим. Активных проверок нет.') : 'Инженерный режим выключен.';
+  element('engineering-state').textContent = engineering.enabled ? (shutter.active ? 'ШТ · ' + (stages[shutter.active.stage] ?? shutter.active.stage) : engineering.active ? 'Ветвь ' + engineering.active.pump + ' · ' + (stages[engineering.active.stage] ?? engineering.active.stage) : 'Инженерный режим. Активных проверок нет.') : 'Инженерный режим выключен.';
   element('engineering-enter').disabled = blocked || engineering.enabled || !snapshot.stoppedConfirmed;
-  element('engineering-leave').disabled = blocked || !engineering.enabled || !!engineering.active;
-  element('engineering-stop').disabled = blocked || !engineering.active;
+  element('engineering-leave').disabled = blocked || !engineering.enabled || engineeringBusy || cycle.pending;
+  element('engineering-stop').disabled = blocked || !engineeringBusy;
   element('reset-flow').disabled = blocked || !snapshot.stoppedConfirmed;
   element('engineering-branches').innerHTML = [1, 2].map(pump => {
     const results = engineering.results[pump];
@@ -173,7 +189,7 @@ function renderEngineering() {
     if (snapshot.faults.some(fault => fault.code === 'VOLTAGE_WHEN_OFF_' + pump)) actions.push({ label: 'Отдельный сброс критической аварии насоса ' + pump, action: 'engineering_reset_voltage', value: pump, disabled: !engineering.enabled });
   }
   if (snapshot.pumpGroup.groupFault) actions.push({ label: 'Отдельно сбросить аварию насосной группы', action: 'reset_pump_group', value: true, disabled: engineering.enabled || !snapshot.stoppedConfirmed });
-  element('engineering-actions').innerHTML = actions.map((action, index) => '<button data-engineering="' + index + '"' + (blocked || action.disabled ? ' disabled' : '') + '>' + escaped(action.label) + '</button>').join('');
+  element('engineering-actions').innerHTML = actions.map((action, index) => '<button data-engineering="' + index + '"' + (blocked || action.disabled || !!shutter.active || (cycle.pending && action.action === 'engineering_test') ? ' disabled' : '') + '>' + escaped(action.label) + '</button>').join('');
   element('engineering-actions').querySelectorAll('button').forEach(button => {
     const action = actions[Number(button.dataset.engineering)];
     button.onclick = () => act({ type: 'command', action: action.action, value: action.repair ? { ...action.value, repaired: element('engineering-repaired').checked } : action.value });
@@ -191,6 +207,14 @@ element('flow-control').onchange = () => act({ type: 'command', action: 'flow_co
 element('engineering-enter').onclick = () => act({ type: 'command', action: 'engineering_enter', value: element('engineering-assumption').checked });
 element('engineering-leave').onclick = () => act({ type: 'command', action: 'engineering_leave' });
 element('engineering-stop').onclick = () => act({ type: 'command', action: 'engineering_stop' });
+element('st-test-start').onclick = () => act({ type: 'command', action: 'engineering_st_test' });
+element('st-release-set').onclick = () => act({ type: 'command', action: 'engineering_st_release_time', value: Number(element('st-release-time').value) });
+element('st-restore-power').onclick = () => act({ type: 'command', action: 'engineering_st_restore', value: { repaired: element('st-repaired').checked, manualFinished: element('st-manual-finished').checked, engaged: element('st-engaged').checked } });
+element('engineering-cycle-begin').onclick = () => act({ type: 'command', action: 'engineering_cycle_begin' });
+element('engineering-cycle-continue').onclick = () => act({ type: 'command', action: 'engineering_cycle_continue', value: { repaired: element('engineering-repaired').checked } });
+element('engineering-cycle-skip').onclick = () => act({ type: 'command', action: 'engineering_cycle_skip' });
+element('engineering-cycle-cancel').onclick = () => act({ type: 'command', action: 'engineering_cycle_cancel' });
+element('engineering-cycle-repeat').onclick = () => act({ type: 'command', action: 'engineering_cycle_repeat', value: { key: element('engineering-cycle-repeat-key').value, repaired: element('engineering-repaired').checked } });
 element('reset-flow').onclick = () => act({ type: 'command', action: 'reset_flow_faults', value: true });
 element('fixture').onclick = () => act({ type: 'fixture' });
 element('recovery-fixture').onclick = () => act({ type: 'recovery_fixture', pump: 1 });

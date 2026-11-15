@@ -2,7 +2,7 @@
 <html lang="ru">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARANGA · Симулятор теплообменника</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
-<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.7 · давление и перезагрузка</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
+<header><div><span class="eyebrow">ARANGA / ENGINEERING</span><h1>Теплообменник <span class="version">0.8 · проверки ШТ</span></h1><p>Ручной и сквозной пуск → работа → обязательный останов</p></div><div class="sim-badge">ТОЛЬКО ИМИТАЦИЯ<br><small>Без подключения к оборудованию</small></div></header>
 <main>
 <div id="error" role="alert" hidden></div>
 <section class="status-bar"><div><small>Состояние ТО</small><strong id="state">Неизвестно</strong></div><div><small>Подэтап</small><strong id="stage">—</strong></div><div><small>Время модели</small><strong id="time">0,0 с</strong></div><div><small>Физический останов</small><strong id="physical">Не подтверждён</strong></div></section>
@@ -53,6 +53,16 @@
   <p class="hint">Для проверки затвора после ремонта вручную включают его отдельный автомат при снятых командах. Для насоса также требуется подготовленное питание насоса. После прерывания ремонтной проверки затвора автомат нужно снова отключить.</p>
   <div id="engineering-branches" class="mechanisms"></div>
   <div id="engineering-actions" class="buttons"></div>
+  <h3>Проверка ШТ</h3>
+  <p id="st-test-state" role="status"></p>
+  <p class="hint">Закрыт → Открыт → Закрыт. Профиль без охлаждения; разрешённый D-215 тест с охлаждением ещё не реализован. После ремонта сначала отдельный возврат питания. Сохранение результатов — только память процесса.</p>
+  <div class="buttons"><button id="st-test-start">Полный тест ШТ</button><label>Сход с концевика, с <input id="st-release-time" type="number" min="1" max="10" value="5"></label><button id="st-release-set">Применить 1–10 с</button></div>
+  <div class="buttons"><label><input id="st-repaired" type="checkbox"> Неисправность ШТ устранена</label><label><input id="st-manual-finished" type="checkbox"> Ручное вмешательство окончено</label><label><input id="st-engaged" type="checkbox"> Механическое зацепление восстановлено</label><button id="st-restore-power">Отдельно восстановить питание ШТ</button></div>
+  <h3>Общий инженерный цикл</h3>
+  <p class="hint">Ветвь 1 → ветвь 2 → ШТ → ШОД → дымосос. ШОД и дымосос пока не реализованы. Пропуск не означает успешную проверку.</p>
+  <p id="engineering-cycle-state" role="status"></p><div id="engineering-cycle-results"></div>
+  <div class="buttons"><button id="engineering-cycle-begin">Начать общий цикл</button><button id="engineering-cycle-continue">Продолжить</button><button id="engineering-cycle-skip">Пропустить ещё не начатый тест</button><button id="engineering-cycle-cancel">Отменить общий цикл</button></div>
+  <div class="buttons"><select id="engineering-cycle-repeat-key"><option value="BRANCH_1">Ветвь 1</option><option value="BRANCH_2">Ветвь 2</option><option value="ST">ШТ</option></select><button id="engineering-cycle-repeat">Повторить выбранный тест полностью</button></div>
   <p class="hint">Тест насоса: противоположная ветвь изолирована → свой затвор закрыт → насос → открытие → через 5 с проверка Q и ΔP независимо от флага → OFF с новым подтверждением 000. Отдельный тест затвора: открыт → закрыт → открыт. Все входы задаются испытателем отдельно.</p>
   <div class="buttons"><button id="reset-flow">Подтверждаю отдельный сброс аварий расхода после останова</button></div>
   <p class="hint">Сброс аварий расхода требует достоверных Q и обоих давлений. Нулевой расход при OFF допустим; требование следующего полного пуска по Q и ΔP сохраняется.</p>

@@ -12,6 +12,8 @@ import { Engineering } from './engineering.mjs';
 import { PumpRecovery } from './recovery.mjs';
 import { PressureProtection } from './pressure.mjs';
 import { RebootRecovery } from './reboot.mjs';
+import { ShutterTest } from './shutter-test.mjs';
+import { EngineeringCycle } from './engineering-cycle.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -53,6 +55,7 @@ export class Simulation {
     this.mode = 'MANUAL'; // D-291: если сквозной режим не выбран — ручной.
     this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null, flowControl: true, flowMin: 5, dpMin: 0.3 }; // D-269: 38 Гц только для прерванного сквозного запуска; flowControl — D-032/D-045, flowMin в м³/ч и dpMin в бар — исходные D-012.
     this.manualFrequency = 25; // D-296: сохранённое ручное задание не заменяется пусковым Fmin.
+    this.config.stReleaseSeconds = 5; // D-074/D-219: исходное время схода; инженерная настройка 1–10 с.
     this.selectedPump = 1; // Начальный выбор тестового профиля; после успешной смены изменяется.
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
@@ -64,6 +67,8 @@ export class Simulation {
     this.pumps = new PumpGroup(); // Подпоследовательность насосов без права выдачи выходов.
     this.valves = new PumpValves(); // Позиционная диагностика и ручные ожидания, отдельно от физических входов.
     this.engineering = new Engineering(); // Отдельные тесты и разрешённый возврат; производственных ролей пока нет.
+    this.shutterTest = new ShutterTest();
+    this.engineeringCycle = new EngineeringCycle();
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
     this.aranga = new ArangaExchange(); // Прикладные операции имитатора печи; реального Modbus нет.
@@ -134,6 +139,8 @@ export class Simulation {
     const savedPressure = structuredClone(this.pressure);
     const savedSelected = this.selectedPump;
     const savedConfig = structuredClone(this.config);
+    const savedShutterTest = structuredClone(this.shutterTest);
+    const savedEngineeringCycle = structuredClone(this.engineeringCycle);
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
     const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
@@ -156,6 +163,8 @@ export class Simulation {
     Object.assign(this.pressure, savedPressure);
     this.pressure.resumeFrom = null; // D-150: reboot запрещает возврат к ранней отмене давления.
     Object.assign(this.config, savedConfig);
+    this.shutterTest.restoreSnapshot(savedShutterTest, this.clock.now);
+    this.engineeringCycle.restoreSnapshot(savedEngineeringCycle, this);
     this.selectedPump = savedSelected;
     this.config.flowControl = savedFlowControl;
     this.hydraulics.requireFullStartup = savedFullStartup;
@@ -209,6 +218,7 @@ export class Simulation {
     if (!this.stoppedConfirmed()) reasons.push('Не подтверждены останов ПЧ и отсутствие напряжения насосов');
     if (!this.hmiAvailable()) reasons.push('Нет обмена с управляющей HMI');
     if (this.engineering.enabled) reasons.push('Инженерный режим');
+    if (this.shutterTest.required || this.shutterTest.incomplete) reasons.push('Не выполнен обязательный полный тест ШТ (D-214/D-223)');
     if (Object.values(this.engineering.returnRequired).some(Boolean)) reasons.push('Не подтверждён возврат нижнего ручного крана');
     if (Object.values(this.engineering.breakerOffRequired).some(Boolean)) reasons.push('Не подтверждено обязательное отключение автомата затвора');
     for (const name of ['grid.normal', 'temperature.normal', 'configuration.ready', 'vfd.exchange']) { // name — обязательная предпосылка первого сценария.
@@ -265,9 +275,17 @@ export class Simulation {
     else if (action.startsWith('engineering_')) {
       const handlers = {
         engineering_enter: () => this.engineering.enter(this, value),
-        engineering_leave: () => this.engineering.leave(this),
-        engineering_test: () => this.engineering.start(this, value),
-        engineering_stop: () => { if (!this.engineering.active) return ['Нет активной проверки']; this.engineering.stop(this); return []; },
+        engineering_leave: () => this.engineeringCycle.pending ? ['Сначала завершите или отмените общий цикл'] : this.engineering.leave(this),
+        engineering_test: () => this.engineeringCycle.pending ? ['Общий цикл: используйте Продолжить/выборочный повтор'] : this.engineering.start(this, value),
+        engineering_st_test: () => this.engineeringCycle.pending ? ['Общий цикл: используйте Продолжить/выборочный повтор'] : this.shutterTest.start(this),
+        engineering_cycle_begin: () => this.engineeringCycle.begin(this),
+        engineering_cycle_continue: () => this.engineeringCycle.next(this, value),
+        engineering_cycle_skip: () => this.engineeringCycle.skip(this),
+        engineering_cycle_cancel: () => this.engineeringCycle.cancel(this),
+        engineering_cycle_repeat: () => typeof value?.key !== 'string' ? ['Выберите этап для полного повторения'] : this.engineeringCycle.next(this, value, value.key),
+        engineering_st_restore: () => this.shutterTest.restorePower(this, value),
+        engineering_st_release_time: () => this.shutterTest.setReleaseTime(this, value),
+        engineering_stop: () => { if (this.shutterTest.active) { this.shutterTest.cancel(this); return []; } if (!this.engineering.active) return ['Нет активной проверки']; this.engineering.stop(this); return []; },
         engineering_return: () => this.engineering.returnBranch(this, value),
         engineering_reset_voltage: () => {
           if (![1, 2].includes(value) || !this.engineering.enabled || this.engineering.active || !this.stoppedConfirmed()) return ['Нужен инженерный режим и подтверждённый останов'];
@@ -328,7 +346,8 @@ export class Simulation {
     } else if (action === 'mode') {
       this.changeMode(value, record);
     } else if (action === 'stop') {
-      if (this.engineering.active) { this.engineering.stop(this); record.result = 'ACCEPTED'; }
+      if (this.shutterTest.active) { this.shutterTest.cancel(this); record.result = 'ACCEPTED'; }
+      else if (this.engineering.active) { this.engineering.stop(this); record.result = 'ACCEPTED'; }
       else record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
     } else if (action === 'continue_stop_after_restart') {
       if (this.state !== 'STOPPING' || !this.protection.needsRestartContinue || !this.protection.bypassOpen || this.protection.stopStage !== 'WAIT_BYPASS') record.reasons.push('Нужно актуальное подтверждение ШБ открыт после reboot и незавершённый останов');
@@ -358,6 +377,12 @@ export class Simulation {
     // Только явно включённый генератор успешных чтений; частоту и команды он не воспроизводит.
     if (this.exchange.aranga && (this.aranga.lastSuccessAt === null || this.clock.now - this.aranga.lastSuccessAt >= 500)) this.aranga.receive(this, 'read');
     if (this.state !== null) {
+      if (this.shutterTest.active && (this.signals.read('emergency') !== false ||
+          ['pressure.before', 'pressure.after'].some(name => this.signals.read(name) === null) ||
+          !this.mainEnabled || !this.supervisionEnabled)) {
+        this.gap('Сочетание проверки ШТ с аварийным входом, потерей управления или недостоверными давлениями пока вне реализованного профиля');
+        return;
+      }
       if (this.signals.read('grid.normal') !== true || this.signals.read('temperature.normal') !== true ||
           this.signals.read('cooling.required') !== false || this.signals.read('vfd.fault') !== false ||
           this.signals.read('vfd.exchange') !== true) {
@@ -413,6 +438,8 @@ export class Simulation {
       stopIrreversible: this.protection.stopIrreversible, stBlocked: this.protection.stBlocked,
       hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
       selectedPump: this.selectedPump, pumpGroup: this.pumps, recovery: this.recovery, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
+      shutterTest: this.shutterTest,
+      engineeringCycle: { ...this.engineeringCycle, current: this.engineeringCycle.current, pending: this.engineeringCycle.pending },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
   }
@@ -424,6 +451,7 @@ export class Simulation {
       pressure: { lowTrip: this.pressure.lowTrip, lowAlarm: this.pressure.lowAlarm, highAlarm: this.pressure.highAlarm,
         missingBoth: this.pressure.missingBoth, requireBoth: this.pressure.requireBoth, restartBlocked: this.pressure.restartBlocked, stopCauses: this.pressure.stopCauses },
       recoveryAfterRestart: { phase: this.boot.phase, storage: this.boot.storage, needsContinue: this.protection.needsRestartContinue && !this.protection.restartContinued },
+      shutterTest: { required: this.shutterTest.required, incomplete: this.shutterTest.incomplete, result: this.shutterTest.result },
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },

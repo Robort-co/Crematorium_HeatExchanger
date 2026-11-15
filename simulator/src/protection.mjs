@@ -132,18 +132,19 @@ export class Protection {
     const contradictory = pump && this.elapsed(sim, 'motionConflict' + pump, position === 'CONTRADICTORY') >= 5000 && !specialClose;
     const timeout = mechanism === 'st' ? 67500 : 45000; // D-072 и D-040, отдельные пределы.
     const stuckOrigin = mechanism === 'st' && ['OPEN', 'CLOSED'].includes(movement.origin) && // ШТ достоверно остаётся на исходном концевике после разрешённого времени выхода.
-      position === movement.origin && position !== desired && duration >= 5000; // D-074, исходная настройка N=5 с.
+      sim.signals.read('st.' + (movement.origin === 'CLOSED' ? 'closed' : 'open')) === true && duration >= sim.config.stReleaseSeconds * 1000; // D-074/D-219: сам исходный контакт, в том числе при 1/1.
     if (duration >= timeout || stuckOrigin || contradictory) {
       if (pump) {
         movement.done = true;
         sim.valves.motionFault(sim, pump, desired, contradictory && duration < timeout);
         return 'STOP';
       }
-      this.fault(sim, mechanism + '_MOTION_TIMEOUT', mechanism + ': положение не подтверждено в срок',
+      this.fault(sim, stuckOrigin ? 'st_ORIGIN_NOT_RELEASED' : mechanism + '_MOTION_TIMEOUT', stuckOrigin ? 'ШТ: исходный концевик не снялся в срок' : mechanism + ': положение не подтверждено в срок',
         position === 'UNKNOWN' ? 'NO_FEEDBACK' : 'TARGET_NOT_CONFIRMED');
       movement.done = true;
       if (mechanism === 'st') {
         this.stBlocked = true;
+        sim.shutterTest.fault(sim, stuckOrigin ? 'Исходный концевик не снялся (D-219)' : 'Положение не достигнуто за 67,5 с (D-218)');
         this.beginStop(sim, 'Неисправность ШТ: байпас и обязательный останов (D-075)');
       }
       return 'STOP';
@@ -180,11 +181,13 @@ export class Protection {
     if (this.elapsed(sim, 'stContradiction', sim.signals.position('st') === 'CONTRADICTORY') >= 5000) {
       this.fault(sim, 'ST_LIMIT_CONTRADICTION', 'Противоречие концевиков ШТ 5 с (D-073)');
       this.stBlocked = true;
+      sim.shutterTest.fault(sim, 'Противоречие концевиков ШТ 5 с (D-073)');
       this.beginStop(sim, 'Неисправность ШТ');
     }
     if (sim.state === 'RUNNING') {
       if (sim.signals.position('st') === 'CLOSED' || this.elapsed(sim, 'stLostOpen', sim.signals.position('st') === 'INTERMEDIATE') >= 5000) {
         this.stBlocked = true;
+        sim.shutterTest.fault(sim, 'Потеря открытого положения ШТ (D-163)');
         this.fault(sim, 'ST_LOST_OPEN', 'Потеря подтверждения открытого ШТ (D-163)');
         this.beginStop(sim, 'Неисправность ШТ');
       }
@@ -212,6 +215,7 @@ export class Protection {
     sim.boot.maybeCirculate(sim);
     sim.recovery.step(sim, request, low || noPressure);
     sim.engineering.step(sim, request, low || noPressure); // Только запросы проверки, самостоятельные защиты остаются старше.
+    sim.shutterTest.step(sim, request);
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);
     if (low || noPressure) {
       // D-149: низкое давление запрещает насосы, но не открытие затворов.
@@ -243,6 +247,8 @@ export class Protection {
     if (sim.coverageGap) return; // Диагноз не разрешает выдачу выдуманной реакции за границей реализованного сценария.
     for (const [name, value] of Object.entries(final)) this.emit(sim, name, value); // name/value — итог после всех вычисленных в цикле ограничений.
     if (this.stBlocked) { this.emit(sim, 'st.direction', 'STOP'); this.emit(sim, 'st.power', false); }
+    sim.shutterTest.afterOutputs(sim); // Успех только после фактической выдачи STOP направлениям.
+    sim.engineeringCycle.observe(sim); // Только запись результата/ожидание; следующий механизм сам не запускается.
     sim.request = request;
     if (sim.state === 'STOPPING' && this.stopStage === 'FINAL_OUTPUTS') {
       // D-028/D-169: выдача положений останова завершает процедуру; достижения этих положений не ждём.
