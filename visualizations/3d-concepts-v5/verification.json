@@ -1,0 +1,45 @@
+{
+  "version": "v5",
+  "base": "v2",
+  "date": "2026-11-15",
+  "userSteering": "SHOD excluded in this iteration",
+  "checks": {
+    "previousVersionFilesUnchanged": 88,
+    "sourceCADUnchanged": true,
+    "cadMeshes": 247,
+    "conceptMeshes": 66,
+    "shodMeshes": 0,
+    "squareBeforeTaper": [
+      0.8300000429153442,
+      0.8299999833106995
+    ],
+    "squareAfterTaper": [
+      0.7000000476837158,
+      0.699999988079071
+    ],
+    "stAboveTaper": true,
+    "stHeightMatchesFormerV2Reference": true,
+    "archPipeConcentric": true,
+    "maximumArchRadiusError": 1.0136017269957165E-07,
+    "frontCircularOpening": true,
+    "backWallClosed": true,
+    "suctionPipeFanCoaxialAndConnected": true,
+    "suctionOppositeUpperBankExit": true,
+    "fanAboveExchanger": true,
+    "upperDischargeLeftRelativeToInflow": true,
+    "boxRiseHeight": 2.2,
+    "hiddenOriginalOutletMeshes": 4,
+    "cadVisibleWithConcept": 232,
+    "cadVisibleWithoutConcept": 236,
+    "finiteGeometry": true,
+    "htmlIdsPresent": true
+  },
+  "validation": {
+    "build": "npm run build passed",
+    "syntax": "node --check passed",
+    "preview": "Offline software renderer uses the same assembly and concept geometry as viewer; not a browser screenshot.",
+    "browser": "Not rerun: local file access was previously blocked by browser tool policy; no bypass attempted."
+  },
+  "scope": "Only visualizations/3d-concepts-v5 written; no program/electrical/interface changes; no commit/push",
+  "buildOutputSHA256": "2e0a2b573df8bcb154c75cc6dfaa3073b68242b9399193c7088877223e374cba"
+}

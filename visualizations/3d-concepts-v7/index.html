@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Теплообменник — скосы газового короба и насосные ветви · v7</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><div><div class="eyebrow">ТЕПЛООБМЕННИК / КОМПОНОВКА / V7 НА ОСНОВЕ V6</div><h1>Скосы газового короба и насосная группа</h1></div><div class="demo">ЭСКИЗ · ДЕМО<br><small>Без связи с оборудованием</small></div></header>
+<div class="version-bar"><b>Два скоса по образцу STEP</b><span>Две насосные ветви на обратке</span><a href="../3d-concepts-v6/index.html">Сравнить с v6</a></div>
+<main>
+<section id="stage" aria-label="Теплообменник с закруглённым газовым коробом, поперечным трактом и дымососом с вертикальной трубой">
+<div class="scene-title"><h2>Скосы до и после ШТ</h2><p>Насосная группа — на перенесённой водяной обратке</p></div>
+<div id="canvas-host"></div><svg id="leaders" aria-hidden="true"></svg><div id="labels"></div><div id="loading">Загрузка локальной модели…</div>
+<div class="scene-note">Корпуса и внутренности — исходный STEP<br>Обратка — на противоположном фланце</div>
+<div class="views"><button data-view="iso">Общий вид</button><button data-view="side">Сбоку</button><button data-view="arch">Арка крупно</button><button data-view="top">Сверху</button><button data-view="back">С другой стороны</button><button data-view="core">Крупно ТО</button><button data-view="water">Обратка воды</button><button data-view="bevels">Скосы крупно</button><button data-view="pumps">Насосы крупно</button></div>
+</section>
+<aside>
+<div class="eyebrow">ЭЛЕМЕНТ И ЕГО СТАТУС</div><label for="component">Выделить элемент</label>
+<select id="component"><option value="all">Вся установка</option>
+<optgroup label="Новая обвязка"><option value="outlet">Закруглённый низ короба</option><option value="bevel_lower">Скос перед ШТ</option><option value="bevel_upper">Скос после ШТ</option><option value="duct">Сужение и квадратный короб</option><option value="damper">ШТ после сужения</option><option value="arch">Повёрнутая арка</option><option value="suction">Продлённый круглый тракт</option><option value="fan">Дымосос</option><option value="motor">Двигатель дымососа</option><option value="exhaust">Выпуск вверх и переход</option><option value="chimney">Дымовая труба</option><option value="water_return">Перенесённая обратка</option><option value="water_cap">Глухая крышка старого фланца</option></optgroup>
+<optgroup label="Детали теплообменника"><option value="shell">Корпуса</option><option value="tubes">Жаровые трубы</option><option value="baffles">Перегородки</option><option value="water">Водяные патрубки / перемычка</option><option value="chamber">Камера переворота</option><option value="safety">Клапан в CAD</option></optgroup><optgroup label="Насосные ветви на обратке"><option value="pumps">Насосы Н1 / Н2</option><option value="pump_filters">Фильтры Ф1 / Ф2</option><option value="pump_valves">Электрозатворы З1 / З2</option><option value="pump_manual">Ручные краны</option><option value="pump_pipes">Коллекторы и трубы</option></optgroup></select>
+<h3 id="part-title">Компоновка v7</h3><span class="source-tag" id="source-tag">ТО: CAD · ОБВЯЗКА: ЭСКИЗ</span><p id="part-info"></p><p id="picked"></p>
+<div class="status-block"><label for="demo-state">Показать состояние · ДЕМО</label><select id="demo-state"><option value="unknown">? Нет данных</option><option value="normal">✓ Норма — пример</option><option value="warn">△ Внимание — пример</option><option value="alarm">! Авария — пример</option></select><div id="state-readout">? Нет данных</div><small>Только подсветка. Положение ШТ условно.</small></div>
+<label class="check"><input id="show-concept" type="checkbox" checked> Новая обвязка, обратка и насосы</label>
+<label class="check"><input id="show-fan" type="checkbox" checked> Дымосос и двигатель</label>
+<label class="check"><input id="show-labels" type="checkbox" checked> Подписи на модели</label>
+<label class="check"><input id="detached" type="checkbox"> Вынесенная группа STEP</label>
+<p class="muted">Отключение новой обвязки возвращает исходный CAD. «Арка крупно» скрывает дымосос; «Общий вид» возвращает его. «Скосы крупно» показывает задние наклонные торцы. «Насосы крупно» показывает обе ветви.</p>
+<div class="legend"><span><i class="water"></i> Вода — снаружи жаровых труб</span><span><i class="gas"></i> Газ — внутри труб и в газоходе</span></div>
+</aside></main>
+<section class="routes"><div><h3><i class="gas"></i> Газовый тракт</h3><p>Верхняя банка → закруглённый низ короба → вверх → сужение → ШТ → арка → круглая труба поперёк банок → дымосос → вверх → переход → дымовая труба</p><div class="route-row"><button data-pick="bevel_lower">Нижний скос</button><button data-pick="bevel_upper">Верхний скос</button><button data-pick="damper">ШТ</button><button data-pick="arch">Арка</button><button data-pick="suction">Круглый тракт</button><button data-pick="exhaust">Выпуск вверх</button></div><small>Новая ось круглого тракта совпадает с направлением выпуска дымососа в v5. Дымоход байпаса остаётся отдельным.</small></div>
+<div><h3><i class="water"></i> Две параллельные насосные ветви</h3><p>В каждой: ручной кран → фильтр → насос → электрозатвор → ручной кран → отвод в ТО. Поток по обратке направлен сверху вниз.</p><div class="route-row"><button data-pick="pumps">Н1 / Н2</button><button data-pick="pump_filters">Фильтры</button><button data-pick="pump_valves">Затворы</button><button data-pick="pump_manual">Ручные краны</button></div><small>Состав — по утверждённой гидравлике. Форма оборудования и расстояния условны; текущие состояния неизвестны.</small></div></section>
+<footer><b>Из STEP:</b> корпуса, трубы, перегородки, патрубки, опоры и камера переворота. <b>Изменения v7:</b> два плоских скоса задних торцов по образцу STEP и две насосные ветви вместо прямого участка обратки. <b>Условно:</b> размеры новой обвязки, насосы, фильтры, краны и приводы. Н1/Н2 обозначают ветви, а не фактическое состояние. Это компоновка для просмотра, не монтажный чертёж.</footer>
+<script src="model-data.js"></script><script src="viewer.js"></script></body></html>

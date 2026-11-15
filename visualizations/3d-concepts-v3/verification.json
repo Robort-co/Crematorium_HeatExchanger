@@ -1,0 +1,302 @@
+{
+  "errors": [],
+  "externalRequests": [],
+  "overview": {
+    "style": 1,
+    "selected": "all",
+    "state": "unknown",
+    "cameraType": "OrthographicCamera",
+    "cadMeshes": 247,
+    "conceptMeshes": 58,
+    "conceptVisible": true,
+    "sourceOutletVisible": 0,
+    "notes": {
+      "revision": "v3",
+      "style": "01 — полупрозрачный",
+      "confirmed": "По новому указанию: из верхнего корпуса влево через короб с ШТ, затем немного вниз к дымососу и далее в вертикальный дымоход. ШОД остаётся перед дымососом.",
+      "assumptions": "Новый выход заменяет показ исходного выходного канала CAD (сетки 218–221). Сечения, длины, снижение, форма дымососа и высота дымохода условны.",
+      "terminology": "ШД пользователя / ШТ по проекту.",
+      "outlet": {
+        "x": -0.99,
+        "y": 1.675,
+        "z": 0
+      },
+      "fanCenter": {
+        "x": -3.4,
+        "y": 1.25,
+        "z": 0.5
+      },
+      "chimneyCenter": {
+        "x": -5.15,
+        "z": 0.5
+      },
+      "chimneyHeight": 3.15,
+      "chimneyAxis": [
+        0,
+        1,
+        0
+      ],
+      "originalCADOutletHiddenWhenConceptVisible": [
+        218,
+        219,
+        220,
+        221
+      ],
+      "internalGasDirection": "Не назначено. Стрелки только во внешнем тракте."
+    },
+    "visible": 290,
+    "chimneyWorldAxis": [
+      0,
+      0.9999999999999999,
+      0
+    ],
+    "chimneyScreenDeltaX": 0,
+    "camera": [
+      2.5,
+      3.8,
+      10.5
+    ],
+    "boundsCAD": {
+      "min": [
+        -1.4429999589920044,
+        0,
+        -0.7084978222846985
+      ],
+      "max": [
+        1.4430646896362305,
+        3.628000020980835,
+        0.5034999847412109
+      ]
+    }
+  },
+  "initial": {
+    "style": 1,
+    "selected": "all",
+    "state": "unknown",
+    "cameraType": "OrthographicCamera",
+    "cadMeshes": 247,
+    "conceptMeshes": 58,
+    "conceptVisible": true,
+    "sourceOutletVisible": 0,
+    "notes": {
+      "revision": "v3",
+      "style": "01 — полупрозрачный",
+      "confirmed": "По новому указанию: из верхнего корпуса влево через короб с ШТ, затем немного вниз к дымососу и далее в вертикальный дымоход. ШОД остаётся перед дымососом.",
+      "assumptions": "Новый выход заменяет показ исходного выходного канала CAD (сетки 218–221). Сечения, длины, снижение, форма дымососа и высота дымохода условны.",
+      "terminology": "ШД пользователя / ШТ по проекту.",
+      "outlet": {
+        "x": -0.99,
+        "y": 1.675,
+        "z": 0
+      },
+      "fanCenter": {
+        "x": -3.4,
+        "y": 1.25,
+        "z": 0.5
+      },
+      "chimneyCenter": {
+        "x": -5.15,
+        "z": 0.5
+      },
+      "chimneyHeight": 3.15,
+      "chimneyAxis": [
+        0,
+        1,
+        0
+      ],
+      "originalCADOutletHiddenWhenConceptVisible": [
+        218,
+        219,
+        220,
+        221
+      ],
+      "internalGasDirection": "Не назначено. Стрелки только во внешнем тракте."
+    },
+    "visible": 290,
+    "chimneyWorldAxis": [
+      0,
+      0.9999999999999999,
+      0
+    ],
+    "chimneyScreenDeltaX": 0,
+    "camera": [
+      -1.8,
+      2.2500000000000013,
+      11.999999999999998
+    ],
+    "boundsCAD": {
+      "min": [
+        -1.4429999589920044,
+        0,
+        -0.7084978222846985
+      ],
+      "max": [
+        1.4430646896362305,
+        3.628000020980835,
+        0.5034999847412109
+      ]
+    }
+  },
+  "selections": [
+    "НОВАЯ ГЕОМЕТРИЯ · УСЛОВНО",
+    "НОВАЯ ГЕОМЕТРИЯ · УСЛОВНО",
+    "НОВАЯ ГЕОМЕТРИЯ · УСЛОВНО",
+    "НОВАЯ ГЕОМЕТРИЯ · УСЛОВНО"
+  ],
+  "demo": {
+    "style": 1,
+    "selected": "chimney",
+    "state": "alarm",
+    "cameraType": "OrthographicCamera",
+    "cadMeshes": 247,
+    "conceptMeshes": 58,
+    "conceptVisible": true,
+    "sourceOutletVisible": 0,
+    "notes": {
+      "revision": "v3",
+      "style": "01 — полупрозрачный",
+      "confirmed": "По новому указанию: из верхнего корпуса влево через короб с ШТ, затем немного вниз к дымососу и далее в вертикальный дымоход. ШОД остаётся перед дымососом.",
+      "assumptions": "Новый выход заменяет показ исходного выходного канала CAD (сетки 218–221). Сечения, длины, снижение, форма дымососа и высота дымохода условны.",
+      "terminology": "ШД пользователя / ШТ по проекту.",
+      "outlet": {
+        "x": -0.99,
+        "y": 1.675,
+        "z": 0
+      },
+      "fanCenter": {
+        "x": -3.4,
+        "y": 1.25,
+        "z": 0.5
+      },
+      "chimneyCenter": {
+        "x": -5.15,
+        "z": 0.5
+      },
+      "chimneyHeight": 3.15,
+      "chimneyAxis": [
+        0,
+        1,
+        0
+      ],
+      "originalCADOutletHiddenWhenConceptVisible": [
+        218,
+        219,
+        220,
+        221
+      ],
+      "internalGasDirection": "Не назначено. Стрелки только во внешнем тракте."
+    },
+    "visible": 290,
+    "chimneyWorldAxis": [
+      0,
+      0.9999999999999999,
+      0
+    ],
+    "chimneyScreenDeltaX": 0,
+    "camera": [
+      -1.8,
+      2.2500000000000013,
+      11.999999999999998
+    ],
+    "boundsCAD": {
+      "min": [
+        -1.4429999589920044,
+        0,
+        -0.7084978222846985
+      ],
+      "max": [
+        1.4430646896362305,
+        3.628000020980835,
+        0.5034999847412109
+      ]
+    }
+  },
+  "hidden": {
+    "style": 1,
+    "selected": "chimney",
+    "state": "alarm",
+    "cameraType": "OrthographicCamera",
+    "cadMeshes": 247,
+    "conceptMeshes": 58,
+    "conceptVisible": false,
+    "sourceOutletVisible": 4,
+    "notes": {
+      "revision": "v3",
+      "style": "01 — полупрозрачный",
+      "confirmed": "По новому указанию: из верхнего корпуса влево через короб с ШТ, затем немного вниз к дымососу и далее в вертикальный дымоход. ШОД остаётся перед дымососом.",
+      "assumptions": "Новый выход заменяет показ исходного выходного канала CAD (сетки 218–221). Сечения, длины, снижение, форма дымососа и высота дымохода условны.",
+      "terminology": "ШД пользователя / ШТ по проекту.",
+      "outlet": {
+        "x": -0.99,
+        "y": 1.675,
+        "z": 0
+      },
+      "fanCenter": {
+        "x": -3.4,
+        "y": 1.25,
+        "z": 0.5
+      },
+      "chimneyCenter": {
+        "x": -5.15,
+        "z": 0.5
+      },
+      "chimneyHeight": 3.15,
+      "chimneyAxis": [
+        0,
+        1,
+        0
+      ],
+      "originalCADOutletHiddenWhenConceptVisible": [
+        218,
+        219,
+        220,
+        221
+      ],
+      "internalGasDirection": "Не назначено. Стрелки только во внешнем тракте."
+    },
+    "visible": 236,
+    "chimneyWorldAxis": [
+      0,
+      0.9999999999999999,
+      0
+    ],
+    "chimneyScreenDeltaX": 0,
+    "camera": [
+      -1.8,
+      2.2500000000000013,
+      11.999999999999998
+    ],
+    "boundsCAD": {
+      "min": [
+        -1.4429999589920044,
+        0,
+        -0.7084978222846985
+      ],
+      "max": [
+        1.4430646896362305,
+        3.628000020980835,
+        0.5034999847412109
+      ]
+    }
+  },
+  "labels": [
+    {
+      "width": 1800,
+      "overflow": false,
+      "inside": true,
+      "overlap": false
+    },
+    {
+      "width": 768,
+      "overflow": false,
+      "inside": true,
+      "overlap": false
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "inside": true,
+      "overlap": false
+    }
+  ]
+}

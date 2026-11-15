@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Теплообменник — квадратный короб и концентричная арка · v5</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><div><div class="eyebrow">ТЕПЛООБМЕННИК / КОМПОНОВКА / V5 НА ОСНОВЕ V2</div><h1>Квадратный короб с арочной верхушкой</h1></div><div class="demo">ЭСКИЗ · ДЕМО<br><small>Без связи с оборудованием</small></div></header>
+<div class="version-bar"><b>Полупрозрачный корпус</b><span>Дымосос над теплообменником</span><span>Арка концентрична трубе</span><a href="../3d-concepts-v2/index.html">Сравнить с v2</a></div>
+<main>
+<section id="stage" aria-label="Теплообменник, сужающийся квадратный короб с ШТ, арочная верхушка, дымосос сверху и дымоход">
+<div class="scene-title"><h2>Подъём → ШТ → дымосос над ТО</h2><p>Короткий патрубок вдоль банок · верхний выпуск налево</p></div>
+<div id="canvas-host"></div><svg id="leaders" aria-hidden="true"></svg><div id="labels"></div><div id="loading">Загрузка локальной модели…</div>
+<div class="scene-note">Корпуса и внутренности — STEP v2<br>Высота короба примерно равна высоте всего ТО</div>
+<div class="views"><button data-view="iso">Общий вид</button><button data-view="side">Сбоку</button><button data-view="arch">Арка крупно</button><button data-view="top">Сверху</button><button data-view="back">С другой стороны</button><button data-view="core">Крупно ТО</button></div>
+</section>
+<aside>
+<div class="eyebrow">ЭЛЕМЕНТ И ЕГО СТАТУС</div><label for="component">Выделить элемент</label>
+<select id="component"><option value="all">Вся установка</option>
+<optgroup label="Новая условная геометрия"><option value="outlet">Нижний поворотный короб</option><option value="duct">Сужение и квадратный короб</option><option value="damper">ШТ после сужения</option><option value="arch">Арочная верхушка</option><option value="suction">Круглый всасывающий патрубок</option><option value="fan">Дымосос над ТО</option><option value="motor">Двигатель дымососа</option><option value="exhaust">Верхний выпуск налево</option><option value="chimney">Вертикальный дымоход</option></optgroup>
+<optgroup label="Исходный CAD"><option value="shell">Корпуса</option><option value="tubes">Жаровые трубы</option><option value="baffles">Перегородки</option><option value="water">Водяные патрубки / перемычка</option><option value="chamber">Камера переворота</option><option value="safety">Клапан в CAD</option></optgroup><option value="pumps">Насосная группа — без 3D</option></select>
+<h3 id="part-title">Компоновка v5</h3><span class="source-tag" id="source-tag">ТО: CAD · ОБВЯЗКА: ЭСКИЗ</span><p id="part-info"></p><p id="picked"></p>
+<div class="status-block"><label for="demo-state">Показать состояние · ДЕМО</label><select id="demo-state"><option value="unknown">? Нет данных</option><option value="normal">✓ Норма — пример</option><option value="warn">△ Внимание — пример</option><option value="alarm">! Авария — пример</option></select><div id="state-readout">? Нет данных</div><small>Только подсветка. Положение ШТ условно.</small></div>
+<label class="check"><input id="show-concept" type="checkbox" checked> Новая обвязка (выкл. — исходный CAD)</label>
+<label class="check"><input id="show-fan" type="checkbox" checked> Дымосос и двигатель</label>
+<label class="check"><input id="show-labels" type="checkbox" checked> Подписи на модели</label>
+<label class="check"><input id="detached" type="checkbox"> Вынесенная группа STEP</label>
+<p class="muted">«Арка крупно» скрывает дымосос для осмотра общего центра. «Общий вид» возвращает его.</p>
+<div class="legend"><span><i class="water"></i> Вода — снаружи жаровых труб</span><span><i class="gas"></i> Газ — внутри труб и в газоходе</span></div>
+</aside></main>
+<section class="routes"><div><h3><i class="gas"></i> Газовый тракт</h3><p>Верхняя банка → вверх → квадратное сужение → ШТ → арочная камера → обратно вдоль банок → дымосос → верхний выпуск налево → дымоход</p><div class="route-row"><button data-pick="damper">ШТ</button><button data-pick="arch">Арка и общий центр</button><button data-pick="suction">Короткая труба</button><button data-pick="fan">Дымосос</button><button data-pick="exhaust">Выпуск налево</button></div><small>Направление «налево» задано по ходу входящего в дымосос газа. Дымоход байпаса остаётся отдельным.</small></div>
+<div><h3><i class="water"></i> Водяной контур · сохранён</h3><p>Обратка → насосная группа → нижний корпус → перемычка → верхний корпус → подача</p><div class="route-row"><button data-pick="water">Патрубки и перемычка</button><button data-pick="pumps">Насосная группа — схема</button></div><small>Внешняя водяная обвязка и приборы не добавлены. Ориентация исходной сборки — как в v2.</small></div></section>
+<footer><b>Из STEP:</b> корпуса, трубы, перегородки, патрубки, опоры и камера переворота. <b>Новая геометрия:</b> выходной короб, сужение, ШТ, арка, короткий патрубок, улитка и дымоход. Четыре исходные детали выхода скрыты при включённой новой обвязке. <b>Условно:</b> размеры, приводы и крепления. Это компоновка для просмотра, не монтажный чертёж.</footer>
+<script src="model-data.js"></script><script src="viewer.js"></script></body></html>

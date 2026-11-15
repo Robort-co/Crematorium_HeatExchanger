@@ -1,0 +1,23 @@
+{
+  "Date": "2026-11-15",
+  "Version": "v5",
+  "Base": "v2",
+  "Status": "Accepted by user as visual baseline for subsequent revisions",
+  "Archive": "heat-exchanger-v5.zip",
+  "ArchiveSHA256": "067bab379eefe3a5d2fca59819d52f290f4312323454912b949f9f9d01fa3963",
+  "ArchiveBytes": 4817554,
+  "PayloadFiles": 23,
+  "VerifiedPayloadFiles": 23,
+  "TotalArchiveEntries": 24,
+  "ManifestSHA256": "914097d8828a94bc263fb10708e81abf230e22d2609e7385ac9ddbe9206575eb",
+  "Excluded": [
+    "node_modules/",
+    ".npm-cache/",
+    "previews/scene-data.json"
+  ],
+  "ViewerBundleMatchesPreviousVerification": true,
+  "GeometryAndViewerChanged": false,
+  "NextVersion": "v6, once user supplies specific remarks",
+  "CommitPushPerformed": false,
+  "Scope": "Local visual checkpoint only; no program/electrical/control architecture changes"
+}

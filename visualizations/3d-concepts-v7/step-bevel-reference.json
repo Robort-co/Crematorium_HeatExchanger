@@ -1,0 +1,13 @@
+{
+  "meshId": 219,
+  "name": "Выходной канал торец полукруглый",
+  "sourceSHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c",
+  "sourceNormal": [
+    -1.3779095198174218e-08,
+    0.4337177872657776,
+    0.9010487198829651
+  ],
+  "slope": 0.4813477694988251,
+  "tiltFromVerticalDegrees": 25.70373411787751,
+  "meaning": "Inclined planar semicircular back face, not a fillet; v7 applies this slope to both rear semicircular ends."
+}

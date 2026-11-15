@@ -1,0 +1,43 @@
+{
+  "base": "8b7b7a096c18f5b7bec305839759c41eb3a9e5df",
+  "candidateFiles": 166,
+  "candidateBytes": 159642046,
+  "excludedFiles": 28,
+  "textFilesScannedIncludingArchives": 204,
+  "archiveEntriesChecked": 83,
+  "secretPatternFindings": [],
+  "scanner": "Targeted regex scan; not a guarantee of absence of all secrets",
+  "byDirectory": {
+    "visualizations/3d-concepts-v1": 20,
+    "visualizations/3d-concepts-v2": 17,
+    "visualizations/3d-concepts-v3": 17,
+    "visualizations/3d-concepts-v4": 20,
+    "visualizations/3d-concepts-v5": 23,
+    "visualizations/3d-concepts-v6": 26,
+    "visualizations/3d-concepts-v7": 31,
+    "visualizations/DESIGN_DECISIONS.md": 1,
+    "visualizations/baselines": 11
+  },
+  "finalCommitFiles": 173,
+  "readonlyRebuildMatchesV7": true,
+  "geometryChecksPassed": 19,
+  "unchangedFrozenVersions": [
+    5,
+    6,
+    7
+  ],
+  "browserWebGLChecked": false,
+  "engineeringValidation": false,
+  "sharedIndexInitiallyEmpty": true,
+  "exclusions": [
+    "simulator/",
+    "docs/schemes/",
+    "project root documents",
+    "visualizations/hmi-concept-v1/",
+    "visualizations/handoffs/",
+    "historical transfer/status snapshots",
+    "node_modules and caches",
+    "intermediate render JSON",
+    "LOCAL_* closeout files"
+  ]
+}

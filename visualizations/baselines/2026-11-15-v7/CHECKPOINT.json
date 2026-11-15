@@ -1,0 +1,37 @@
+{
+  "Date": "2026-11-15",
+  "Version": "v7",
+  "Base": "v6",
+  "Status": "Accepted by user as visual baseline for subsequent revisions",
+  "Archive": "heat-exchanger-v7.zip",
+  "ArchiveSHA256": "e5a8f9d81d0acf45b7a17352e6a426e7300d5cdbc9e499cf0723fc02e801e3ee",
+  "ArchiveBytes": 5634861,
+  "PayloadFiles": 31,
+  "VerifiedPayloadFiles": 31,
+  "TotalArchiveEntries": 32,
+  "ManifestSHA256": "f0efad95db67a1070d32bb86a16d2ff5b8df70fe0d989e39b70f85fd8c77c7ef",
+  "PreservedFilesManifest": "PRESERVED_FILES.sha256",
+  "PreservedFilesVerified": 180,
+  "PreviousVersionsAndCheckpointFilesVerified": 151,
+  "PreviousVersions": [
+    "hmi-concept-v1",
+    "3d-concepts-v1",
+    "3d-concepts-v2",
+    "3d-concepts-v3",
+    "3d-concepts-v4",
+    "3d-concepts-v5",
+    "3d-concepts-v6"
+  ],
+  "Excluded": [
+    "node_modules/",
+    ".npm-cache/",
+    "__pycache__/",
+    "previews/scene-data.json",
+    "previews/step-reference-data.json"
+  ],
+  "ViewerBundleMatchesPreviousVerification": true,
+  "GeometryAndViewerChanged": false,
+  "NextVersion": "v8, once user supplies specific remarks",
+  "CommitPushPerformed": false,
+  "Scope": "Local visual checkpoint only; no program/electrical/control architecture changes"
+}

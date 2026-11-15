@@ -1,0 +1,4 @@
+node_modules/
+.npm-cache/
+previews/scene-data.json
+previews/step-reference-data.json

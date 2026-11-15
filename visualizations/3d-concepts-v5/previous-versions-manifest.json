@@ -1,0 +1,354 @@
+[
+  {
+    "Path": "visualizations/3d-concepts-v1/viewer.js",
+    "SHA256": "1b4d708edc0cb0f9af624561dbcbb90c663270bb3b20363e142458ac863dce14"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/verification.json",
+    "SHA256": "95eaf7b0569333b82a03e5ba8723b55e2427c7fbc724ac3ddbffe595a157a937"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/source-status-final.txt",
+    "SHA256": "553d8ce480dd0240b512441eb19cca7289672c93c7dd50f679ada07c92821ca7"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/source-status-before.txt",
+    "SHA256": "3557c93ab1577d2c40e910582b27ba54f65efcb1c34ef3679ef7679babe332e8"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/source-status-before-copy.txt",
+    "SHA256": "6e479bd29ac264c51ac1b8656c64b3a0ffe758068bec483ea7118d0bffdbaad5"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/style.css",
+    "SHA256": "ba5abc4cc5fd7dee7bd1b0c05490b670e0d914e3b341737cc0d24459e1fd360a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/index.html",
+    "SHA256": "41e8c33bef0118b77ff90046c48281bc6e7974b08be4cb272b016cbf26caa923"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/GIT_STATUS.md",
+    "SHA256": "43fc75db57f59bfdcd6a5b21e086518b748eb109b2d204fcfadcd86276185bb5"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/delivery-verification.json",
+    "SHA256": "0543c7c41c8ddddb65774cc8c53e9a1ca6b9d796f578da5b0927f2f6d694fd88"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/cad-audit.json",
+    "SHA256": "e29f8bd7802acf621e50647daca07792a66c572ab92b1f26828ff11580e8b117"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/package.json",
+    "SHA256": "a37cb18feebd89aac43d057ce8f233617e4a05d2261a9f9319bd4f7e89c5b529"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/model-data.js",
+    "SHA256": "dcd44548147f0f5d5a5a52ef3cbcd833d545e999299718e68fde15c2f65cb16f"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/README.md",
+    "SHA256": "2f0660b287467e82954f43ef2a6ebb76add50bdfc2679637cb74bc76644abb6a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/SOURCES.md",
+    "SHA256": "37038b41520f7695fe722fba6733a8767ef39fb94971e2a0cefa5a9f8491c951"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/vendor/THREE-LICENSE.txt",
+    "SHA256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/src/viewer.js",
+    "SHA256": "8e7e92e1b10a22469c0d7d941bf12e1e7875a9fe5e5f90b27c1a00e63fb6d7d2"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/src/import-cad.cjs",
+    "SHA256": "fce0435cc56f36d9cfcb4dd101803c68b9c7655bf1ab80b1501c82ac5b49cec6"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/src/build.cjs",
+    "SHA256": "0efe45fe9ec2b2354b450a4799027a16af3fc96d7a3b1399915ab67f3006e055"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/source/heat-exchanger.step",
+    "SHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/style-3.png",
+    "SHA256": "1b2580bdb0fc14fb024518485e0d94ffd800b958001881f4f9b56c47814e1f95"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/style-2.png",
+    "SHA256": "00b27088dd29f5cc0f32bee8086bd7ce45286d1616ddacd68e5061308916598a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/style-1.png",
+    "SHA256": "49a46183eac6b7eef6130d3f960e88d967c066d019e2ce0c959c50c5ac3fcb0b"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/render-3.png",
+    "SHA256": "d7825af1ccd96c368f2f8e4bab16473acaa9837bb76e79bbac4babcd0484cbca"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/render-2.png",
+    "SHA256": "9fc5ec235738edca07e4788eddf48bf2319bb19efcd6dcf429cc45ee508463d8"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v1/previews/render-1.png",
+    "SHA256": "3bc35e591471250ed77f41dc4a87a2995fe01e90672b7a5575e7b8898da70010"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/cad-audit.json",
+    "SHA256": "e29f8bd7802acf621e50647daca07792a66c572ab92b1f26828ff11580e8b117"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/index.html",
+    "SHA256": "28d910d7f7b231a1d44264d202034504e30e6fb9fdc5fc78750bd370e8502730"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/GIT_STATUS.md",
+    "SHA256": "e1183b232c0ad613e7ddb70a24faa52f1a357be0996728893dbd339d8d41d79d"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/delivery-verification.json",
+    "SHA256": "77d9cf43eaf454df9a06ea5536b04527702ce5a5c4d719f1274710f080312f93"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/viewer.js",
+    "SHA256": "60704d3fa9a5e1e221f9cf16654209f873860162f5c78b6b4ce0a97b963a54f1"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/source-status-final.txt",
+    "SHA256": "5c42cb3b41f2ef2edc7864d0ebe7df9113e6ad8e3d6514226e817790dee846e3"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/verification.json",
+    "SHA256": "fb2fd3579fc4856f2d9172738942fcba8efee5b82aa9c0b36cf2ceca9f9b6209"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/source-status-before-copy.txt",
+    "SHA256": "3b6fc5fc1f6cd2c097f1fc165b60b60242c1ed9209cdde63b8f791f3a0c5d23b"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/vendor/THREE-LICENSE.txt",
+    "SHA256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/style.css",
+    "SHA256": "e00ea76036855951da96f8de985fdb31b396c5fb29fa79ac429d334670a79ab6"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/source/heat-exchanger.step",
+    "SHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/README.md",
+    "SHA256": "f8a0992a69ce39a85bf1ce6ff49ece1698b8cbc006ed22030531af863721d0a5"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/model-data.js",
+    "SHA256": "dcd44548147f0f5d5a5a52ef3cbcd833d545e999299718e68fde15c2f65cb16f"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/package.json",
+    "SHA256": "9d8fa4facf04411cd0c7f130ae2f26b2ffdf23bafcd7b7d42d8c94455946226a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/previews/side.png",
+    "SHA256": "d071956a430533f80305c9451a23dec290ef3e76d1f4ebe15b798cf735e7b2df"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/previews/overview.png",
+    "SHA256": "dc70abab7f5be37baa5e6a898740f5b32f2faa70e427a47479705314f0eebed3"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/previews/overview-full.png",
+    "SHA256": "ba335fcfa35c84fade21e443816a9442342f99b5bc49ef1e173d4627e472c185"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/src/viewer.js",
+    "SHA256": "5a6a6ca0d7da107a948dfe2cd8b308bb4917b3a2edb93a4cbc5e9c0dfb9103de"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/src/import-cad.cjs",
+    "SHA256": "fce0435cc56f36d9cfcb4dd101803c68b9c7655bf1ab80b1501c82ac5b49cec6"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/src/gas-concept.js",
+    "SHA256": "ba002964340da86dfaa7a0143628c8b34524a82c9a83468f46ae52c2e00124a1"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v2/src/build.cjs",
+    "SHA256": "0efe45fe9ec2b2354b450a4799027a16af3fc96d7a3b1399915ab67f3006e055"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/cad-audit.json",
+    "SHA256": "e29f8bd7802acf621e50647daca07792a66c572ab92b1f26828ff11580e8b117"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/viewer.js",
+    "SHA256": "c8c8fd67920755ce46b907e0b9fad9ccd02051af7eeb3ba6cccdca97169cdc8b"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/verification.json",
+    "SHA256": "5cc2fd6657452994ff75e2c6051e392ee93e886b9c04e0a23e5f523cb652a51a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/index.html",
+    "SHA256": "3246dcc10517f046c9b1fa28ee2f603da33c2d2516aa182a82a96b2c88a60309"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/GIT_STATUS.md",
+    "SHA256": "3cb63f35769e7ed98a575ed6251645b341a8a243dd880a0bac6831cdd8a6ab60"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/delivery-verification.json",
+    "SHA256": "81d7d658777107f163c4e8c25f5f32c19ab6cd301d4128ed7098e74d408ec32a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/model-data.js",
+    "SHA256": "dcd44548147f0f5d5a5a52ef3cbcd833d545e999299718e68fde15c2f65cb16f"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/package.json",
+    "SHA256": "f5eeb919021944306b8b0dd612dbfcd4a39a4cf4325275befa4f117bed0bb5bd"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/vendor/THREE-LICENSE.txt",
+    "SHA256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/style.css",
+    "SHA256": "db1232e830788edabf0d7362d293e81074b46656b2be913eb10f2b3380ab9bca"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/src/viewer.js",
+    "SHA256": "cc9edd1259fa9b99884bf13a2aac0716cbcfe93989e6949e2a8ae7358f0cc64e"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/src/import-cad.cjs",
+    "SHA256": "fce0435cc56f36d9cfcb4dd101803c68b9c7655bf1ab80b1501c82ac5b49cec6"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/src/gas-concept.js",
+    "SHA256": "b53aaac3d0ec0289da6370df9fc58012190a78821f8db73e77b0336b556443c9"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/src/build.cjs",
+    "SHA256": "0efe45fe9ec2b2354b450a4799027a16af3fc96d7a3b1399915ab67f3006e055"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/source/heat-exchanger.step",
+    "SHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/README.md",
+    "SHA256": "87eb1a033ad18de2d1daa9ebcf27622e176a2afe5c610fa311a4d16a5092be5a"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/PROJECT_STATUS.md",
+    "SHA256": "41a05a0f2c3cfd280fcbe3bfa1fff51a4cfadea18cade4fe41a9133dbab053f4"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/source-status.txt",
+    "SHA256": "384e66cc5de05c157ba9a6059f0367cee258ec2a6dda4abe3b51fcb89ad7616c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/previews/side.png",
+    "SHA256": "d211f0fc7269f01b06ceeeec8b40fdc7bc8a593b2bcc592e5459355ebada517e"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/previews/overview.png",
+    "SHA256": "c821467e63a276a5280e10ff94016576a12d683ae35786dcebb47a02fa70d935"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v3/previews/overview-full.png",
+    "SHA256": "a2de23110d6b7c2f84619c06d62632c44e26939c1462cfb06580990bfd101e36"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/viewer.js",
+    "SHA256": "293f02ca7b6d9811a9a261d544c33ebe84d071fff1efbd7b7617119411d70010"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/verification.json",
+    "SHA256": "ac79549cea572349d9b72989b48975a330a9279f63a658987ccbdff0c4262f0e"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/vendor/THREE-LICENSE.txt",
+    "SHA256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/style.css",
+    "SHA256": "56152849760b84e3aacd74bb2eb8d8607b77ff3fc3697d50f7fbe0fbbd9556c0"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/viewer.js",
+    "SHA256": "e7bf9608b6c4a1a0a2848604bb7f1a4d7370f4d77663baea2e6d903a01982256"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/render-plan.py",
+    "SHA256": "f5748e54da932243ef0777b0f7a5595a73b86304613b92753438441cb5041e69"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/import-cad.cjs",
+    "SHA256": "fce0435cc56f36d9cfcb4dd101803c68b9c7655bf1ab80b1501c82ac5b49cec6"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/gas-concept.js",
+    "SHA256": "42613f6c410abb47bcca104aa4f17c4f45b305de630df2f43c6583dcd1c93fa4"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/export-plan.mjs",
+    "SHA256": "030dfd5f6fc50fdc6c7fc8258e57295decc1e9359b4ecd0fcb98c9b55dbf7f64"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/src/build.cjs",
+    "SHA256": "0efe45fe9ec2b2354b450a4799027a16af3fc96d7a3b1399915ab67f3006e055"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/source-v3-manifest.json",
+    "SHA256": "14f90a60c28637f7f6199897e565bd086b4c1267750038dbc0df56527a55960d"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/source/heat-exchanger.step",
+    "SHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/README.md",
+    "SHA256": "d71aa56050a6cd5c0b126994d15c3b1d61c00c499c12281572d231329fa777a9"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/previews/plan.png",
+    "SHA256": "7376b6afcf5a60971916b8e8debbe9680baa30472fe69f4a9af166a3ac2dffcd"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/previews/plan-data.json",
+    "SHA256": "952c30cc4933f19d525d04a410b73cbed4cadc14544bedd332ffbb9da5fb0e57"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/package.json",
+    "SHA256": "dc36ec73eac5b93e810bfc6c32f677f68511c2a2b5e019ab3c0ba8ae8e54554b"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/package-lock.json",
+    "SHA256": "0228cf2a3385e61e0444053a7d82cb95d82fa18a448f1498ff65b874ec1f566c"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/model-data.js",
+    "SHA256": "dcd44548147f0f5d5a5a52ef3cbcd833d545e999299718e68fde15c2f65cb16f"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/index.html",
+    "SHA256": "991e442f1e293a86a6f9de8ddefa26bde3922988a11ac2062d9bb69ce0fbb539"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/cad-audit.json",
+    "SHA256": "e29f8bd7802acf621e50647daca07792a66c572ab92b1f26828ff11580e8b117"
+  },
+  {
+    "Path": "visualizations/3d-concepts-v4/.gitignore",
+    "SHA256": "913a5e80446aad84df3f5d4efba5f43196845a8a0c2611394f0fbfff8d4bac3d"
+  }
+]

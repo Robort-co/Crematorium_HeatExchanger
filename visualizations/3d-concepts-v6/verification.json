@@ -1,0 +1,73 @@
+{
+  "revision": "v6",
+  "base": "v5",
+  "date": "2026-11-15",
+  "passed": 14,
+  "checks": [
+    {
+      "name": "Original CAD mode restores 236 visible parts and hides new cap",
+      "passed": true
+    },
+    {
+      "name": "Only four water CAD parts move; all other CAD vertices remain unchanged",
+      "passed": true
+    },
+    {
+      "name": "Relocated return flange mates opposite fixed flange; all heights preserved",
+      "passed": true
+    },
+    {
+      "name": "Old flange is closed by a solid cap and cap meets old flange plane",
+      "passed": true
+    },
+    {
+      "name": "Rounded bottom shares upper-bank axis and radius",
+      "passed": true
+    },
+    {
+      "name": "Rotated arch is concentric with the round pipe; real opening is clear",
+      "passed": true
+    },
+    {
+      "name": "Round duct runs across bank axes and mates fan intake with no gap",
+      "passed": true
+    },
+    {
+      "name": "Fan open outlet points up and exactly meets the vertical rectangular riser",
+      "passed": true
+    },
+    {
+      "name": "Transition matches rectangular outlet and round vertical chimney",
+      "passed": true
+    },
+    {
+      "name": "Scene has 247 source CAD parts, 232 visible in v6, no SHOD, finite geometry",
+      "passed": true
+    },
+    {
+      "name": "Disabling concept reverses all relocation transforms",
+      "passed": true
+    },
+    {
+      "name": "All 23 frozen v5 payload files and its ZIP remain unchanged",
+      "passed": true
+    },
+    {
+      "name": "Source geometry and audit copied byte-for-byte from v5",
+      "passed": true
+    },
+    {
+      "name": "Viewer DOM references exist and v6 text does not describe old gas routing",
+      "passed": true
+    }
+  ],
+  "cadParts": 247,
+  "visibleCAD": 232,
+  "conceptMeshes": 66,
+  "shodIncluded": false,
+  "build": "npm run build passed",
+  "browserWebGLChecked": false,
+  "preview": "Offline triangle renderer of actual scene; inspected overview and water-return views",
+  "limits": "Graphic layout only. No engineering sizing, strength, clearance or equipment validation.",
+  "viewerSHA256": "907d2d625f069734349cc66d7e84a72e70cb58ff7b25b1bfc70419fb75855e71"
+}

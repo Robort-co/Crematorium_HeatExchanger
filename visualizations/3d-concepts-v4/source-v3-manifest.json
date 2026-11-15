@@ -1,0 +1,86 @@
+[
+  {
+    "Path": "cad-audit.json",
+    "SHA256": "e29f8bd7802acf621e50647daca07792a66c572ab92b1f26828ff11580e8b117"
+  },
+  {
+    "Path": "delivery-verification.json",
+    "SHA256": "81d7d658777107f163c4e8c25f5f32c19ab6cd301d4128ed7098e74d408ec32a"
+  },
+  {
+    "Path": "GIT_STATUS.md",
+    "SHA256": "3cb63f35769e7ed98a575ed6251645b341a8a243dd880a0bac6831cdd8a6ab60"
+  },
+  {
+    "Path": "index.html",
+    "SHA256": "3246dcc10517f046c9b1fa28ee2f603da33c2d2516aa182a82a96b2c88a60309"
+  },
+  {
+    "Path": "model-data.js",
+    "SHA256": "dcd44548147f0f5d5a5a52ef3cbcd833d545e999299718e68fde15c2f65cb16f"
+  },
+  {
+    "Path": "package.json",
+    "SHA256": "f5eeb919021944306b8b0dd612dbfcd4a39a4cf4325275befa4f117bed0bb5bd"
+  },
+  {
+    "Path": "PROJECT_STATUS.md",
+    "SHA256": "41a05a0f2c3cfd280fcbe3bfa1fff51a4cfadea18cade4fe41a9133dbab053f4"
+  },
+  {
+    "Path": "README.md",
+    "SHA256": "87eb1a033ad18de2d1daa9ebcf27622e176a2afe5c610fa311a4d16a5092be5a"
+  },
+  {
+    "Path": "source-status.txt",
+    "SHA256": "384e66cc5de05c157ba9a6059f0367cee258ec2a6dda4abe3b51fcb89ad7616c"
+  },
+  {
+    "Path": "style.css",
+    "SHA256": "db1232e830788edabf0d7362d293e81074b46656b2be913eb10f2b3380ab9bca"
+  },
+  {
+    "Path": "verification.json",
+    "SHA256": "5cc2fd6657452994ff75e2c6051e392ee93e886b9c04e0a23e5f523cb652a51a"
+  },
+  {
+    "Path": "viewer.js",
+    "SHA256": "c8c8fd67920755ce46b907e0b9fad9ccd02051af7eeb3ba6cccdca97169cdc8b"
+  },
+  {
+    "Path": "previews/overview-full.png",
+    "SHA256": "a2de23110d6b7c2f84619c06d62632c44e26939c1462cfb06580990bfd101e36"
+  },
+  {
+    "Path": "previews/overview.png",
+    "SHA256": "c821467e63a276a5280e10ff94016576a12d683ae35786dcebb47a02fa70d935"
+  },
+  {
+    "Path": "previews/side.png",
+    "SHA256": "d211f0fc7269f01b06ceeeec8b40fdc7bc8a593b2bcc592e5459355ebada517e"
+  },
+  {
+    "Path": "source/heat-exchanger.step",
+    "SHA256": "e90225f91f506330535a02c0996e705f850cd4b033a835b3d39b6c7855736e2c"
+  },
+  {
+    "Path": "src/build.cjs",
+    "SHA256": "0efe45fe9ec2b2354b450a4799027a16af3fc96d7a3b1399915ab67f3006e055"
+  },
+  {
+    "Path": "src/gas-concept.js",
+    "SHA256": "b53aaac3d0ec0289da6370df9fc58012190a78821f8db73e77b0336b556443c9"
+  },
+  {
+    "Path": "src/import-cad.cjs",
+    "SHA256": "fce0435cc56f36d9cfcb4dd101803c68b9c7655bf1ab80b1501c82ac5b49cec6"
+  },
+  {
+    "Path": "src/viewer.js",
+    "SHA256": "cc9edd1259fa9b99884bf13a2aac0716cbcfe93989e6949e2a8ae7358f0cc64e"
+  },
+  {
+    "Path": "vendor/THREE-LICENSE.txt",
+    "SHA256": "4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454"
+  }
+]

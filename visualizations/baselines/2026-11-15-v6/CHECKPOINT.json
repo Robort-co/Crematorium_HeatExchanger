@@ -1,0 +1,35 @@
+{
+  "Date": "2026-11-15",
+  "Version": "v6",
+  "Base": "v5",
+  "Status": "Accepted by user as visual baseline for subsequent revisions",
+  "Archive": "heat-exchanger-v6.zip",
+  "ArchiveSHA256": "a2d1a4bb55fd86bc2fc89884a6579dd74a08367028c821e74bb844f7ed37c23e",
+  "ArchiveBytes": 4952352,
+  "PayloadFiles": 26,
+  "VerifiedPayloadFiles": 26,
+  "TotalArchiveEntries": 27,
+  "ManifestSHA256": "deb38f4a641644c9b09812935666f49e5f899e6c53e6bbf87436c3b152ced5bc",
+  "PreservedFilesManifest": "PRESERVED_FILES.sha256",
+  "PreservedFilesVerified": 145,
+  "PreviousVersionsAndV5CheckpointFilesVerified": 121,
+  "PreviousVersions": [
+    "hmi-concept-v1",
+    "3d-concepts-v1",
+    "3d-concepts-v2",
+    "3d-concepts-v3",
+    "3d-concepts-v4",
+    "3d-concepts-v5"
+  ],
+  "Excluded": [
+    "node_modules/",
+    ".npm-cache/",
+    "__pycache__/",
+    "previews/scene-data.json"
+  ],
+  "ViewerBundleMatchesPreviousVerification": true,
+  "GeometryAndViewerChanged": false,
+  "NextVersion": "v7, once user supplies specific remarks",
+  "CommitPushPerformed": false,
+  "Scope": "Local visual checkpoint only; no program/electrical/control architecture changes"
+}

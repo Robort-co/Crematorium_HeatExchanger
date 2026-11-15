@@ -1,0 +1,33 @@
+{
+  "version": "v4",
+  "date": "2026-11-15",
+  "geometryChecks": {
+    "rightTurnDegrees": 90,
+    "rightHandSideConfirmed": true,
+    "elbowToDuctConnected": true,
+    "ductToFanConnected": true,
+    "lowerInletCoaxial": true,
+    "chimneyWorldAxis": [
+      0,
+      1,
+      0
+    ],
+    "yawDegrees": -12,
+    "conceptMeshes": 69,
+    "finiteCoordinates": true
+  },
+  "sourceChecks": {
+    "v3FilesUnchanged": 21,
+    "stepModelAuditUnchanged": true,
+    "domIdsPresent": true
+  },
+  "build": "npm run build passed",
+  "browserVerification": "Not performed. Local file navigation rejected by browser tool URL policy. No bypass attempted.",
+  "scope": "Only visualizations/3d-concepts-v4 was written in this stage; no program or electrical changes; no commit/push.",
+  "planPreview": {
+    "path": "previews/plan.png",
+    "kind": "Schematic plan exported from concept geometry, not browser screenshot or CAD render",
+    "visuallyReviewed": true
+  },
+  "buildOutputSHA256": "293f02ca7b6d9811a9a261d544c33ebe84d071fff1efbd7b7617119411d70010"
+}

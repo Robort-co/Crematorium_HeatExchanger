@@ -1,0 +1,6 @@
+# Frozen visual versions and their SHA256 manifests must retain exact bytes.
+.gitattributes -text
+3d-concepts-v*/** -text
+baselines/** -text
+DESIGN_DECISIONS.md -text
+closeout/** -text

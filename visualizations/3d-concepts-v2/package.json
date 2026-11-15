@@ -1,0 +1,9 @@
+{
+  "name": "heat-exchanger-3d-concepts",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Изолированные визуальные концепции. Без связи с оборудованием.",
+  "scripts": {"build": "node src/build.cjs", "import-cad": "node src/import-cad.cjs"},
+  "dependencies": {"three": "0.169.0"},
+  "devDependencies": {"esbuild": "0.24.0", "occt-import-js": "0.0.23"}
+}

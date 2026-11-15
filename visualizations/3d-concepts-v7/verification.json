@@ -1,0 +1,93 @@
+{
+  "revision": "v7",
+  "base": "v6",
+  "date": "2026-11-15",
+  "passed": 19,
+  "checks": [
+    {
+      "name": "Original CAD mode restores 236 visible parts and hides new cap",
+      "passed": true
+    },
+    {
+      "name": "Only four water CAD parts move; all other CAD vertices remain unchanged",
+      "passed": true
+    },
+    {
+      "name": "Relocated return flange mates opposite fixed flange; all heights preserved",
+      "passed": true
+    },
+    {
+      "name": "Old flange is closed by a solid cap and cap meets old flange plane",
+      "passed": true
+    },
+    {
+      "name": "Rounded bottom shares upper-bank axis and radius",
+      "passed": true
+    },
+    {
+      "name": "Rotated arch is concentric with the round pipe; real opening is clear",
+      "passed": true
+    },
+    {
+      "name": "Round duct runs across bank axes and mates fan intake with no gap",
+      "passed": true
+    },
+    {
+      "name": "Fan open outlet points up and exactly meets the vertical rectangular riser",
+      "passed": true
+    },
+    {
+      "name": "Transition matches rectangular outlet and round vertical chimney",
+      "passed": true
+    },
+    {
+      "name": "Scene has 247 source CAD parts, 231 visible in v7, no SHOD, finite geometry",
+      "passed": true
+    },
+    {
+      "name": "Both bevels are flat and follow the measured STEP slope",
+      "passed": true
+    },
+    {
+      "name": "Inclined rear ends meet the circular skins and vertical walls",
+      "passed": true
+    },
+    {
+      "name": "Two identical pump branches follow the approved order with four manual valves",
+      "passed": true
+    },
+    {
+      "name": "Pump branch pipe segments touch the device ports, with no straight bypass",
+      "passed": true
+    },
+    {
+      "name": "Disabling concept reverses all relocation transforms",
+      "passed": true
+    },
+    {
+      "name": "All 26 frozen v6 payload files and its ZIP remain unchanged",
+      "passed": true
+    },
+    {
+      "name": "Source geometry and audit copied byte-for-byte from v6",
+      "passed": true
+    },
+    {
+      "name": "Previous visualization files remain as recorded at the v6 freeze",
+      "passed": true
+    },
+    {
+      "name": "Viewer DOM references exist and v7 describes new geometry",
+      "passed": true
+    }
+  ],
+  "cadParts": 247,
+  "visibleCAD": 231,
+  "conceptMeshes": 138,
+  "shodIncluded": false,
+  "build": "npm run build passed",
+  "browserWebGLChecked": false,
+  "preview": "Offline triangle renderer of actual scene; inspected overview, bevels, pumps and STEP-reference views",
+  "limits": "Graphic layout only. No engineering sizing, strength, clearance or equipment validation.",
+  "viewerSHA256": "d9ac4b4f9473a0fbd68c717a4d30c4b50dffc7ae5a12bcda4411e9b7b0165311"
+}
