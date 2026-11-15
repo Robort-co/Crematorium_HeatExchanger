@@ -29,6 +29,7 @@ async function act(data) { // data — одно действие из разре
 }
 
 function feedback(name) { // name — функция выхода; результат берётся только из независимых входов.
+  if (name === 'shod.voltage') return text(snapshot.damperTest.raw) + ' В; положение ' + (snapshot.damperTest.corrected === null ? 'Нет данных' : Math.max(0, Math.min(100, snapshot.damperTest.corrected)).toFixed(1) + '%');
   if (name.startsWith('st.')) return positionLabels[snapshot.positions.st];
   if (name.startsWith('valve')) return positionLabels[snapshot.positions[name.split('.')[0]]];
   if (name.startsWith('pump')) {
@@ -44,6 +45,7 @@ function feedback(name) { // name — функция выхода; резуль�
 
 function render() {
   renderEngineering();
+  renderThermalTests();
   const group = snapshot.pumpGroup; // Состояние группы отдельно от отдельных выходов и входов.
   const operation = group.active; // Уже принятая смена, не новый запрос при каждом обновлении HMI.
   element('flow-control').checked = snapshot.config.flowControl;
@@ -143,9 +145,10 @@ function render() {
 }
 
 function renderEngineering() {
+  const blocked = !snapshot.hmiAvailable || !!snapshot.coverageGap;
   const engineering = snapshot.engineering; // Состояние серверного сеанса; обновление окна не запускает тест заново.
   const shutter = snapshot.shutterTest, cycle = snapshot.engineeringCycle;
-  const engineeringBusy = !!engineering.active || !!shutter.active;
+  const engineeringBusy = !!engineering.active || !!shutter.active || !!snapshot.damperTest.active || !!snapshot.fanTest.active;
   element('st-test-state').textContent = (shutter.active ? 'Этап ШТ: ' + shutter.active.stage : shutter.result ? shutter.result.reason : 'ШТ ещё не проверен') + (shutter.required ? ' · Полный тест обязателен перед Пуском.' : '');
   element('st-test-start').disabled = blocked || !engineering.enabled || engineeringBusy || cycle.pending;
   element('st-restore-power').disabled = blocked || engineeringBusy || !snapshot.stBlocked;
@@ -160,11 +163,10 @@ function renderEngineering() {
   element('engineering-cycle-skip').disabled = blocked || !engineering.enabled || cycle.phase !== 'WAITING';
   element('engineering-cycle-cancel').disabled = blocked || !cycle.pending;
   element('engineering-cycle-repeat').disabled = blocked || !engineering.enabled || engineeringBusy || !['WAITING','COMPLETE','CANCELLED'].includes(cycle.phase);
-  const blocked = !snapshot.hmiAvailable || !!snapshot.coverageGap;
   const labels = { PASSED: 'Пройдено', FAILED: 'Не пройдено', NOT_CHECKED: 'Не проверено' };
   const stages = { PREPARE_OPEN: 'Подготовительное открытие', PREPARE_CLOSED: 'Подготовительное закрытие', CLOSE: 'Проверочное закрытие', BREAK_OPEN: 'Команда снята, подготовка открытия', BREAK_CLOSE: 'Команда снята, подготовка закрытия', OPEN: 'Проверочное открытие', PUMP_ON: 'Включение насоса / задержка 1 с', HYDRAULICS: 'Открытие подтверждено, оценка Q и ΔP через 5 с', WAIT_OFF: 'Ожидание нового подтверждения выключения' };
-  element('engineering-state').textContent = engineering.enabled ? (shutter.active ? 'ШТ · ' + (stages[shutter.active.stage] ?? shutter.active.stage) : engineering.active ? 'Ветвь ' + engineering.active.pump + ' · ' + (stages[engineering.active.stage] ?? engineering.active.stage) : 'Инженерный режим. Активных проверок нет.') : 'Инженерный режим выключен.';
-  element('engineering-enter').disabled = blocked || engineering.enabled || !snapshot.stoppedConfirmed;
+  element('engineering-state').textContent = engineering.enabled ? (shutter.active ? 'ШТ · ' + (stages[shutter.active.stage] ?? shutter.active.stage) : engineering.active ? 'Ветвь ' + engineering.active.pump + ' · ' + (stages[engineering.active.stage] ?? engineering.active.stage) : snapshot.damperTest.active ? 'Проверка ШОД' : snapshot.fanTest.active ? 'Проверка дымососа' : 'Инженерный режим. Активных проверок нет.') : 'Инженерный режим выключен.';
+  element('engineering-enter').disabled = blocked || engineering.enabled || snapshot.state !== 'STOPPED';
   element('engineering-leave').disabled = blocked || !engineering.enabled || engineeringBusy || cycle.pending;
   element('engineering-stop').disabled = blocked || !engineeringBusy;
   element('reset-flow').disabled = blocked || !snapshot.stoppedConfirmed;
@@ -189,7 +191,7 @@ function renderEngineering() {
     if (snapshot.faults.some(fault => fault.code === 'VOLTAGE_WHEN_OFF_' + pump)) actions.push({ label: 'Отдельный сброс критической аварии насоса ' + pump, action: 'engineering_reset_voltage', value: pump, disabled: !engineering.enabled });
   }
   if (snapshot.pumpGroup.groupFault) actions.push({ label: 'Отдельно сбросить аварию насосной группы', action: 'reset_pump_group', value: true, disabled: engineering.enabled || !snapshot.stoppedConfirmed });
-  element('engineering-actions').innerHTML = actions.map((action, index) => '<button data-engineering="' + index + '"' + (blocked || action.disabled || !!shutter.active || (cycle.pending && action.action === 'engineering_test') ? ' disabled' : '') + '>' + escaped(action.label) + '</button>').join('');
+  element('engineering-actions').innerHTML = actions.map((action, index) => '<button data-engineering="' + index + '"' + (blocked || action.disabled || !!shutter.active || !!snapshot.damperTest.active || !!snapshot.fanTest.active || (cycle.pending && action.action === 'engineering_test') ? ' disabled' : '') + '>' + escaped(action.label) + '</button>').join('');
   element('engineering-actions').querySelectorAll('button').forEach(button => {
     const action = actions[Number(button.dataset.engineering)];
     button.onclick = () => act({ type: 'command', action: action.action, value: action.repair ? { ...action.value, repaired: element('engineering-repaired').checked } : action.value });
@@ -197,6 +199,38 @@ function renderEngineering() {
   element('valve-waits').innerHTML = Object.entries(snapshot.valves.waits).map(([pump, wait]) => '<span>Затвор ' + pump + ': ' + escaped(wait.target === 'OPEN' ? 'проверить открытие' : 'закрыть и проверить') + (wait.remaining === null ? ' · таймаут не назначен' : ', осталось ' + seconds(wait.remaining) + ' с') + (wait.suspended ? ' · сохранено до актуального задания текущего этапа' : '') + '</span>' + (wait.target === 'OPEN' && !wait.suspended ? '<button data-open="' + pump + '">Привод ' + pump + ' обесточен, полное открытие проверено</button>' : '')).join('');
   element('valve-waits').querySelectorAll('button').forEach(button => { button.disabled = blocked; button.onclick = () => act({ type: 'command', action: 'confirm_valve_open', value: Number(button.dataset.open) }); });
 }
+
+function renderThermalTests() {
+  const damper = snapshot.damperTest, fan = snapshot.fanTest, cooling = snapshot.cooling;
+  const locked = !snapshot.hmiAvailable || !!snapshot.coverageGap || !snapshot.engineering.enabled;
+  const active = !!(snapshot.engineering.active || snapshot.shutterTest.active || damper.active || fan.active);
+  const labels = { PASSED: 'Пройдено', FAILED: 'Не пройдено', NOT_CHECKED: 'Не проверено' };
+  const fanStages = { PREPARE_STOP: 'Подтверждение предварительного останова', RAMP: 'Нарастание задания', TRACK: 'Ожидание частоты', HOLD: 'Ожидание инженера', WAIT_STOP: 'Подтверждение конечного останова' };
+  element('shod-test-state').textContent = (damper.active ? 'Цель ' + damper.active.targets[damper.active.index] + '%' : damper.result ? labels[damper.result.result] + ': ' + damper.result.reason : 'ШОД ещё не проверен') + ' · Обратная связь ' + text(damper.raw) + ' В; скорректировано для диагностики ' + text(damper.corrected) + '%';
+  element('shod-motion-warning').hidden = !damper.motionWarning;
+  element('fan-test-state').textContent = fan.active ? fanStages[fan.active.stage] + ' · Ступень ' + fan.active.targets[fan.active.index] + ' Гц · Задание ' + text(snapshot.outputs['vfd.frequency']?.value) + ' Гц · Факт ' + feedback('vfd.frequency') + ' Гц' : fan.result ? labels[fan.result.result] + ': ' + fan.result.reason : 'Дымосос ещё не проверен';
+  element('fan-blocks').textContent = 'Запрет обычного пуска: ' + text(fan.ordinaryBlocked) + '; требуется тест диапазона: ' + text(fan.rangeRequired) + '; запрет охлаждения: ' + text(fan.coolingBlocked) + '; самостоятельная блокировка ПЧ: ' + text(snapshot.vfdGuard.blocked);
+  element('cooling-state').textContent = 'Запрос охлаждения: ' + text(snapshot.telemetry.cooling.requested) + ' · ' + ({IDLE:'Не требуется',WAITING:'Ожидает разрешений',WAIT_STOP:'Ожидает подтверждения останова',TEST_OWNS_FAN:'Дымососом управляет проверка',COOLING:'Выдан запрос охлаждения'}[cooling.phase] ?? cooling.phase) + (cooling.reasons.length ? ' · ' + cooling.reasons.join('; ') : '');
+  element('shod-test-start').disabled = element('fan-test-start').disabled = locked || active || snapshot.engineeringCycle.pending;
+  element('shod-k-set').disabled = locked || !!damper.active;
+  for (const [id, value] of [['shod-k',snapshot.config.shodK],['fan-rate',snapshot.config.fanTestRate],['fan-min',snapshot.config.fmin],['fan-max',snapshot.config.fmax]]) if (document.activeElement !== element(id)) element(id).value = value;
+  element('fan-rate-set').disabled = element('fan-bounds-set').disabled = locked || !!fan.active;
+  const actual = snapshot.signals['vfd.frequency'], work = snapshot.signals['vfd.running'];
+  element('fan-continue').disabled = locked || fan.active?.stage !== 'HOLD' || actual.quality !== 'GOOD' || !actual.fresh || work.value !== true || work.quality !== 'GOOD' || !work.fresh || Math.abs(actual.value - fan.active.targets[fan.active.index]) > 0.5;
+  element('cooling-restore').disabled = locked || active || !fan.coolingBlocked;
+  element('vfd-reset').disabled = locked || active || !snapshot.vfdGuard.blocked;
+}
+
+element('shod-test-start').onclick = () => act({type:'command',action:'engineering_shod_test'});
+element('shod-k-set').onclick = () => act({type:'command',action:'engineering_shod_k',value:Number(element('shod-k').value)});
+element('fan-test-start').onclick = () => act({type:'command',action:'engineering_fan_test'});
+element('fan-continue').onclick = () => act({type:'command',action:'engineering_fan_continue'});
+element('fan-rate-set').onclick = () => act({type:'command',action:'engineering_fan_settings',value:{rate:Number(element('fan-rate').value)}});
+element('fan-bounds-set').onclick = () => act({type:'command',action:'engineering_fan_settings',value:{fmin:Number(element('fan-min').value),fmax:Number(element('fan-max').value),reserveFrequency:element('fan-reserve').value === '' ? null : Number(element('fan-reserve').value),reserveConfirmed:element('fan-reserve-confirmed').checked}});
+element('cooling-restore').onclick = () => act({type:'command',action:'engineering_cooling_restore',value:{inspected:element('fan-inspected').checked,causeRemoved:element('fan-cause-removed').checked,workFinished:element('fan-work-finished').checked,allowAutomatic:element('fan-allow-automatic').checked}});
+element('vfd-reset').onclick = () => act({type:'command',action:'engineering_vfd_reset',value:element('vfd-repaired').checked});
+element('cooling-fixture').onclick = () => act({type:'cooling_fixture',circulation:false});
+element('cooling-pump-fixture').onclick = () => act({type:'cooling_fixture',circulation:true});
 
 for (const pump of [1, 2]) { // pump — номер насоса из отдельной подписанной кнопки.
   element('switch-pump-' + pump).onclick = () => act({ type: 'command', action: 'switch_pump', value: pump });

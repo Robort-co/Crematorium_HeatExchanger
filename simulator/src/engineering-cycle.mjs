@@ -1,5 +1,5 @@
 /** Переходы общего цикла D-265/D-253/D-255/D-256.
- * Реализованы две объединённые ветви и ШТ; ШОД/дымосос остаются явными незавершёнными этапами.
+ * Две объединённые ветви → ШТ → ШОД → дымосос; собственные допуски механизмов обязательны.
  * Этот координатор не выдаёт выходов и не отменяет собственных допусков отдельных тестов.
  */
 export const ENGINEERING_ORDER = ['BRANCH_1', 'BRANCH_2', 'ST', 'SHOD', 'FAN'];
@@ -16,7 +16,7 @@ export class EngineeringCycle {
     const reasons = [];
     if (!sim.engineering.enabled || !sim.engineering.furnaceOff || sim.state !== 'STOPPED') reasons.push('Нужен инженерный сеанс при выключенной печи и остановленном ТО');
     if (!sim.hmiAvailable()) reasons.push('Нет HMI');
-    if (sim.engineering.active || sim.shutterTest.active) reasons.push('Предыдущая проверка не закончена');
+    if (sim.anyEngineeringTest()) reasons.push('Предыдущая проверка не закончена');
     if (Object.values(sim.engineering.returnRequired).some(Boolean) || Object.values(sim.engineering.breakerOffRequired).some(Boolean) || Object.keys(sim.valves.waits).length) reasons.push('Сначала закончите обязательные ручные действия');
     return reasons;
   }
@@ -35,9 +35,8 @@ export class EngineeringCycle {
     const key = repeatKey ?? this.current;
     if (!ENGINEERING_ORDER.includes(key)) reasons.push('Неизвестный этап');
     if (repeatKey && !this.results[key]) reasons.push('Этап ещё не имеет результата для выборочного повторения');
-    if (['SHOD', 'FAN'].includes(key)) reasons.push('Этот тест ещё не реализован; успех общего цикла не объявляется');
     if (reasons.length) return reasons;
-    const admission = key === 'ST' ? sim.shutterTest.start(sim) : sim.engineering.start(sim, { kind: 'branch', pump: key === 'BRANCH_1' ? 1 : 2, repaired: options?.repaired });
+    const admission = key === 'ST' ? sim.shutterTest.start(sim) : key === 'SHOD' ? sim.damperTest.start(sim) : key === 'FAN' ? sim.fanTest.start(sim) : sim.engineering.start(sim, { kind: 'branch', pump: key === 'BRANCH_1' ? 1 : 2, repaired: options?.repaired });
     if (admission.length) return admission;
     const previousPhase = this.phase;
     this.results[key] = { result: 'NOT_CHECKED', reason: 'Новая полная попытка', valid: false };
@@ -59,6 +58,8 @@ export class EngineeringCycle {
     if (this.phase === 'ACTIVE') {
       this.cancelRequested = true;
       if (this.running.key === 'ST') sim.shutterTest.cancel(sim, 'Общий цикл отменён инженером (D-255/D-221)');
+      else if (this.running.key === 'SHOD') sim.damperTest.cancel(sim,'Общий цикл отменён инженером (D-255/D-234)');
+      else if (this.running.key === 'FAN') sim.fanTest.cancel(sim,'Общий цикл отменён инженером (D-255/D-245)');
       else sim.engineering.stop(sim, 'Общий цикл отменён инженером (D-255)');
     } else this.finishCancel(sim);
     return [];
@@ -75,8 +76,9 @@ export class EngineeringCycle {
   observe(sim) {
     if (this.phase !== 'ACTIVE') return;
     const op = this.running;
-    if (op.key === 'ST' ? sim.shutterTest.active : sim.engineering.active) return;
-    const result = op.key === 'ST' ? sim.shutterTest.result : sim.engineering.history.at(-1);
+    const controller=op.key==='ST'?sim.shutterTest:op.key==='SHOD'?sim.damperTest:op.key==='FAN'?sim.fanTest:sim.engineering;
+    if (controller.active) return;
+    const result = controller===sim.engineering?sim.engineering.history.at(-1):controller.result;
     this.record(sim, op.key, result ?? { result: 'NOT_CHECKED', reason: 'Нет результата текущей попытки', valid: false });
     this.running = null;
     if (this.cancelRequested) { this.finishCancel(sim); return; }

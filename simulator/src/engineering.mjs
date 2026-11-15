@@ -26,7 +26,7 @@ export class Engineering {
   }
   commonReasons(sim) {
     const reasons = [];
-    if (sim.shutterTest.active) reasons.push('Сначала завершите проверку ШТ');
+    if (sim.shutterTest.active || sim.damperTest.active || sim.fanTest.active) reasons.push('Сначала завершите другую инженерную проверку');
     if (!this.enabled || !this.furnaceOff) reasons.push('Нужен инженерный сеанс с явной предпосылкой «печь выключена»');
     if (sim.state !== 'STOPPED') reasons.push('ТО должен быть остановлен');
     if (!sim.hmiAvailable()) reasons.push('Нет управляющей HMI');
@@ -44,14 +44,14 @@ export class Engineering {
   enter(sim, confirmed) {
     if (confirmed !== true) return ['Явно подтвердите тестовую предпосылку: печь выключена, проверку выполняет инженер'];
     if (this.enabled) return ['Инженерный режим уже включён'];
-    if (!sim.stoppedConfirmed() || sim.pumps.active) return ['Нужен подтверждённый останов ТО/насосов/ПЧ'];
+    if (sim.state !== 'STOPPED' || (!sim.stoppedConfirmed() && !sim.cooling.running(sim)) || sim.pumps.active) return ['Нужен остановленный ТО с подтверждённым остановом механизмов либо разрешённым охлаждением'];
     this.enabled = true; this.furnaceOff = true;
     sim.procedureId += 1;
     sim.log('ENGINEERING', 'Инженерный сеанс: выключенная печь и полномочия заданы испытателем; аппаратное доказательство отсутствует');
     return [];
   }
   leave(sim) {
-    if (!this.enabled || this.active || sim.shutterTest.active) return ['Завершите текущую попытку с подтверждённым OFF/снятыми направлениями ШТ'];
+    if (!this.enabled || sim.anyEngineeringTest()) return ['Завершите текущую инженерную попытку'];
     if (Object.values(this.returnRequired).some(Boolean) || Object.values(this.breakerOffRequired).some(Boolean)) return ['Завершите обязательные ручные действия'];
     if (Object.values(sim.valves.waits).some(wait => wait.source === 'ENGINEERING_OPEN')) return ['Подтвердите ручное открытие неисправного затвора после проверки'];
     this.enabled = false; this.furnaceOff = false;

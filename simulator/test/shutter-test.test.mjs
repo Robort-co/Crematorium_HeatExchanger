@@ -127,10 +127,9 @@ test('D-224: успех сохраняется в памяти reboot; нова�
   assert.equal(retry.shutterTest.required,true); assert.equal(retry.shutterTest.result.valid,false); assert.equal(retry.shutterTest.history.length,1);
 });
 
-test('Профиль ШТ не выдумывает проверку с охлаждением и неизвестными исходными DI', () => {
-  for(const condition of ['COOLING','UNKNOWN','INTERMEDIATE','CONTRADICTORY']) {
+test('Профиль ШТ не выдумывает проверку с неизвестными исходными DI', () => {
+  for(const condition of ['UNKNOWN','INTERMEDIATE','CONTRADICTORY']) {
     const sim=engineer();
-    if(condition==='COOLING')sim.signals.set('cooling.required',true);
     if(condition==='UNKNOWN')sim.signals.set('st.closed',null,'UNKNOWN');
     if(condition==='INTERMEDIATE')sim.signals.set('st.closed',false);
     if(condition==='CONTRADICTORY')sim.signals.set('st.open',true);

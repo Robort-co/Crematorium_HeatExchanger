@@ -2,6 +2,7 @@
 export const DEFINITIONS = { // Названия, типы и единицы нормализованных входов; pressure/flow уже в инженерных единицах.
   'st.open': ['ШТ: открыт', 'bool'],
   'st.closed': ['ШТ: закрыт', 'bool'],
+  'shod.feedback': ['ШОД: исходная обратная связь', 'number', 'В', 0, 10],
   'valve1.open': ['Затвор 1: открыт', 'bool'],
   'valve1.closed': ['Затвор 1: закрыт', 'bool'],
   'valve2.open': ['Затвор 2: открыт', 'bool'],

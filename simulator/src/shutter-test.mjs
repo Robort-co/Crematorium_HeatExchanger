@@ -1,5 +1,5 @@
 /** ШТ: отдельный инженерный цикл D-077/D-214/D-218–D-224.
- * Этот профиль не моделирует охлаждение D-215–D-217. Все выходы выдаёт Protection.
+ * Охлаждение D-215–D-217 — только по явному запросу и местному критерию Q/ΔP. Все выходы выдаёт Protection.
  * required/incomplete/result сохраняются только в памяти имитатора, не в реальной NV.
  */
 export class ShutterTest {
@@ -8,16 +8,18 @@ export class ShutterTest {
   incomplete = false; // Устанавливается ДО первой команды движения D-223.
   result = null;
   history = [];
-  isOwnFault(code) { return ['st_MOTION_TIMEOUT', 'st_ORIGIN_NOT_RELEASED', 'ST_LIMIT_CONTRADICTION', 'ST_LOST_OPEN'].includes(code); }
+  isOwnFault(code) { return ['st_MOTION_TIMEOUT', 'st_ORIGIN_NOT_RELEASED', 'ST_LIMIT_CONTRADICTION', 'ST_LOST_OPEN','ST_LOST_CLOSED'].includes(code); }
   reasons(sim, test = true) {
     const reasons = [];
     if (test && (!sim.engineering.enabled || !sim.engineering.furnaceOff)) reasons.push('Нужен инженерный сеанс и явная предпосылка «печь выключена»');
-    if (!sim.stoppedConfirmed()) reasons.push('Профиль ШТ без охлаждения: нужны подтверждённые останов ТО, OFF/000 насосов и STOP ПЧ');
+    const coolingContext=sim.signals.read('cooling.required')===true;
+    if (sim.state!=='STOPPED' || (coolingContext ? !sim.vfdGuard.stopped(sim)&&!sim.cooling.running(sim) : !sim.stoppedConfirmed())) reasons.push('Нужен остановленный ТО с подтверждённым STOP либо уже работающим охлаждением');
     if (!sim.hmiAvailable()) reasons.push('Нет управляющей HMI');
-    if (this.active || sim.engineering.active || sim.pumps.active || sim.recovery.active) reasons.push('Другой механизм/проверка ещё не завершён');
+    if (sim.anyEngineeringTest() || sim.pumps.active || sim.recovery.active) reasons.push('Другой механизм/проверка ещё не завершён');
     if (Object.values(sim.engineering.returnRequired).some(Boolean) || Object.values(sim.engineering.breakerOffRequired).some(Boolean) || Object.keys(sim.valves.waits).length) reasons.push('Завершите обязательные ручные действия предыдущего этапа');
     if (sim.signals.position('st') !== 'CLOSED') reasons.push('Нужно реальное исходное Закрыт=1/Открыт=0; ручное подтверждение не заменяет DI');
-    if (sim.signals.read('cooling.required') !== false) reasons.push('Профиль с охлаждением ещё не реализован; разрешение D-215 не отменено');
+    if (sim.signals.read('cooling.required') === null) reasons.push('Нет достоверного запроса охлаждения');
+    if (test && coolingContext && sim.cooling.running(sim) && !sim.cooling.circulation(sim)) reasons.push('D-216: перед OPEN при работающем охлаждении нужны местная циркуляция, Q/ΔP и открытый затвор после 5 с');
     for (const name of ['grid.normal', 'temperature.normal', 'configuration.ready', 'vfd.exchange']) if (sim.signals.read(name) !== true) reasons.push('Нет текущего допуска: ' + name);
     if (sim.signals.read('emergency') !== false || sim.signals.read('vfd.fault') !== false) reasons.push('Нет текущего допуска по аварии/ПЧ');
     if (!sim.mainEnabled || !sim.supervisionEnabled) reasons.push('Нет подтверждённой работы управления');
@@ -50,7 +52,8 @@ export class ShutterTest {
     if (reasons.length) return reasons;
     this.required = true; this.incomplete = true;
     this.result = { result: 'NOT_CHECKED', reason: 'Новая полная попытка начата', valid: false };
-    this.active = { stage: 'OPEN', startedAt: sim.clock.now, moveRevision: null, result: 'NOT_CHECKED', reason: null, cancelling: false };
+    this.active = { stage: 'OPEN', startedAt: sim.clock.now, moveRevision: null, result: 'NOT_CHECKED', reason: null, cancelling: false,
+      coolingContext:sim.signals.read('cooling.required')===true, needsCirculation:sim.cooling.running(sim) };
     delete sim.protection.motions.st;
     sim.procedureId += 1;
     sim.log('ST_TEST_START', 'До движения сохранён признак незавершённости в памяти модели; Закрыт → Открыт → Закрыт');
@@ -87,7 +90,9 @@ export class ShutterTest {
     if (sim.protection.stBlocked && op.stage !== 'FINISH') this.fault(sim, 'Собственная блокировка ШТ');
     // Узкое согласование 15.11: низкое давление при неработающем дымососе/без охлаждения.
     // OFF насосов и OPEN их затворов остаются в Protection, собственная ошибка ШТ старше отмены.
-    if (sim.pressure.lowTrip) this.cancel(sim, 'Защита низкого давления — согласование 15.11');
+    if (sim.cooling.running(sim) && sim.signals.read('cooling.required')===true) {op.coolingContext=true;op.needsCirculation=true;}
+    if (op.needsCirculation && !sim.cooling.circulation(sim)) this.cancel(sim,'Потеря требуемой циркуляции при охлаждении (D-217)');
+    if (sim.pressure.lowTrip && !op.coolingContext) this.cancel(sim, 'Защита низкого давления — согласование 15.11');
     if (!sim.hmiAvailable()) this.cancel(sim, 'Потеря связи HMI 5 с (D-222)');
     request['st.power'] = !sim.protection.stBlocked;
     request['st.direction'] = 'STOP';

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { engineer } from './helpers.mjs';
+import { damperPassed,fanPassed } from './thermal-helpers.mjs';
 
 function cycle() { const sim=engineer(); assert.equal(sim.command('engineering_cycle_begin').result,'ACCEPTED'); return sim; }
 function branch(sim,pump) {
@@ -14,7 +15,7 @@ function branch(sim,pump) {
 }
 function st(sim) { sim.sampleGroup('stOpen'); sim.advance(200); sim.sampleGroup('stClosed'); }
 
-test('D-265: две объединённые ветви → ШТ, каждый следующий тест только после отдельного Продолжить; ШОД/дымосос не объявлены пройденными', () => {
+test('D-265: полный порядок двух объединённых ветвей → ШТ → ШОД → дымосос, каждый следующий тест только после отдельного Продолжить', () => {
   const sim=cycle(); assert.equal(sim.engineeringCycle.current,'BRANCH_1');
   assert.equal(sim.command('engineering_st_test').result,'REJECTED');
   branch(sim,1); assert.equal(sim.engineeringCycle.current,'BRANCH_2');
@@ -22,11 +23,11 @@ test('D-265: две объединённые ветви → ШТ, каждый �
   branch(sim,2); assert.equal(sim.engineeringCycle.current,'ST'); assert.equal(sim.outputs.value('st.direction'),'STOP');
   assert.equal(sim.command('engineering_cycle_continue').result,'ACCEPTED'); st(sim);
   assert.equal(sim.engineeringCycle.current,'SHOD'); assert.equal(sim.engineeringCycle.results.ST.result,'PASSED');
-  assert.equal(sim.command('engineering_cycle_continue').result,'REJECTED'); assert.equal(sim.shutterTest.active,null);
-  sim.command('engineering_cycle_skip'); assert.equal(sim.engineeringCycle.current,'FAN');
-  assert.equal(sim.command('engineering_cycle_continue').result,'REJECTED');
-  sim.command('engineering_cycle_skip'); assert.equal(sim.engineeringCycle.phase,'COMPLETE');
-  assert.equal(sim.engineeringCycle.results.SHOD.result,'NOT_CHECKED'); assert.equal(sim.engineeringCycle.results.FAN.result,'NOT_CHECKED');
+  assert.equal(sim.damperTest.active,null); assert.equal(sim.command('engineering_cycle_continue').result,'ACCEPTED'); damperPassed(sim);
+  assert.equal(sim.engineeringCycle.current,'FAN'); assert.equal(sim.fanTest.active,null);
+  assert.equal(sim.command('engineering_cycle_continue').result,'ACCEPTED');fanPassed(sim);
+  assert.equal(sim.engineeringCycle.phase,'COMPLETE');
+  for(const result of Object.values(sim.engineeringCycle.results))assert.equal(result.result,'PASSED');
 });
 
 test('D-253/D-265: ручные обязанности и текущий допуск проверяются заново; пропуск не снимает ошибки/требования', () => {

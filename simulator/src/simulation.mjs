@@ -14,6 +14,10 @@ import { PressureProtection } from './pressure.mjs';
 import { RebootRecovery } from './reboot.mjs';
 import { ShutterTest } from './shutter-test.mjs';
 import { EngineeringCycle } from './engineering-cycle.mjs';
+import { Cooling } from './cooling.mjs';
+import { VfdGuard } from './vfd-guard.mjs';
+import { DamperTest } from './damper-test.mjs';
+import { FanTest } from './fan-test.mjs';
 
 // Явные тестовые воздействия. Числа 1,5/2 бар и 8 м³/ч — образцы, НЕ новые проектные уставки.
 export const INPUT_GROUPS = {
@@ -56,6 +60,7 @@ export class Simulation {
     this.config = { fmin: 20, fmax: 50, coolingFrequency: 25, startupLinkLossFrequency: 38, resonance: null, flowControl: true, flowMin: 5, dpMin: 0.3 }; // D-269: 38 Гц только для прерванного сквозного запуска; flowControl — D-032/D-045, flowMin в м³/ч и dpMin в бар — исходные D-012.
     this.manualFrequency = 25; // D-296: сохранённое ручное задание не заменяется пусковым Fmin.
     this.config.stReleaseSeconds = 5; // D-074/D-219: исходное время схода; инженерная настройка 1–10 с.
+    this.config.shodK = 1.2; this.config.fanTestRate = 0.5; // Утверждённые D-226/D-239; В и Гц/с различаются.
     this.selectedPump = 1; // Начальный выбор тестового профиля; после успешной смены изменяется.
     this.signals = new SignalStore(this.clock); // Отдельный поставщик измерений.
     this.outputs = new SimulatedOutputs(this.clock, this.log.bind(this), () => this.signals.revision); // Только виртуальный транспорт.
@@ -69,6 +74,8 @@ export class Simulation {
     this.engineering = new Engineering(); // Отдельные тесты и разрешённый возврат; производственных ролей пока нет.
     this.shutterTest = new ShutterTest();
     this.engineeringCycle = new EngineeringCycle();
+    this.cooling = new Cooling(); this.vfdGuard = new VfdGuard();
+    this.damperTest = new DamperTest(); this.fanTest = new FanTest();
     this.protection = new Protection(); // Единственный владелец итоговых команд.
     this.supervision = new Supervision(); // Модель проверки завершённых циклов.
     this.aranga = new ArangaExchange(); // Прикладные операции имитатора печи; реального Modbus нет.
@@ -104,9 +111,10 @@ export class Simulation {
     }
     this.signals.set('pressure.before', 1.5);
     this.signals.set('pressure.after', 1.5);
+    this.signals.set('shod.feedback', 0); // Явный образец начального положения, не результат команды.
     this.request = { 'pump1.run': false, 'pump2.run': false,
       'valve1.direction': 'STOP', 'valve2.direction': 'STOP',
-      'st.direction': 'STOP', 'st.power': true, 'vfd.enable': false, 'vfd.run': 'STOP', 'vfd.frequency': 20 };
+      'st.direction': 'STOP', 'st.power': true, 'vfd.enable': false, 'vfd.run': 'STOP', 'vfd.frequency': 20, 'shod.voltage': 0 };
     // Команды исходной точки — часть тестовых данных о прошлом, а не результат Пуска.
     for (const [name, value] of Object.entries(this.request)) { // name/value — сохранённая виртуальная команда.
       this.outputs.commands[name] = { id: ++this.outputs.sequence, value, issuedAt: this.clock.now,
@@ -133,6 +141,24 @@ export class Simulation {
     this.log('ASSUMPTION', 'D-112: допустимость раннего восстановления, открытый ШТ, работающий ПЧ и закрытый ШБ заданы испытателем. Полная отмена защиты D-149 здесь не проверяется');
     this.tick();
   }
+  loadCoolingFixture(circulation = false) {
+    this.loadFixture();
+    this.signals.set('cooling.required', true); this.signals.set('vfd.running', true); this.signals.set('vfd.frequency', 25);
+    const preset = { 'vfd.run':'START', 'vfd.enable':true, 'vfd.frequency':25, 'shod.voltage':10 };
+    if(circulation){
+      preset['pump1.run']=true;
+      for(const phase of ['l1','l2','l3'])this.signals.set('pump1.'+phase,true);
+      this.signals.set('valve2.open',false);this.signals.set('valve2.closed',true);
+      this.signals.set('pressure.after',2);this.signals.set('flow',8);
+      this.cooling.openedAt[1]=this.clock.now-5000;
+    }
+    for(const [name,value] of Object.entries(preset)){
+      this.request[name]=value;
+      this.outputs.commands[name]={id:++this.outputs.sequence,value,issuedAt:this.clock.now,delivery:'ACCEPTED',deliveredAt:this.clock.now,issuedInputRevision:-1,deliveryInputRevision:-1,origin:'TEST_FIXTURE'};
+    }
+    this.log('ASSUMPTION','Искусственная исходная точка: охлаждение уже работает'+(circulation?', местная циркуляция и 5 с открытия заранее заданы испытателем':', насосы выключены')+'. Не автоматический запуск насосов и не восстановление оборудования');
+    this.tick();
+  }
   restart({ downtimeMs = 0, savedStateReadable = true } = {}) {
     if (!Number.isFinite(downtimeMs) || downtimeMs < 0 || downtimeMs > 86400000 || typeof savedStateReadable !== 'boolean') throw new Error('Некорректные условия имитации reboot');
     const savedState = this.state ?? (this.boot.readable ? this.boot.savedState : null); // Повторный reboot не превращает непрочитанный снимок в достоверный.
@@ -141,6 +167,8 @@ export class Simulation {
     const savedConfig = structuredClone(this.config);
     const savedShutterTest = structuredClone(this.shutterTest);
     const savedEngineeringCycle = structuredClone(this.engineeringCycle);
+    const savedDamper = structuredClone(this.damperTest), savedFan = structuredClone(this.fanTest);
+    const savedVfdBlock = { blocked:this.vfdGuard.blocked, causes:[...this.vfdGuard.causes] };
     const savedFaults = this.protection.faults.map(item => ({ ...item })); // Для демонстрации не теряем известные ошибки в памяти процесса.
     const savedStBlock = this.protection.stBlocked; // Существующая блокировка не снимается перезапуском модели.
     const savedMode = this.mode; // Демонстрация сохранённого выбора в памяти процесса, не NV-хранилище WB.
@@ -165,6 +193,8 @@ export class Simulation {
     Object.assign(this.config, savedConfig);
     this.shutterTest.restoreSnapshot(savedShutterTest, this.clock.now);
     this.engineeringCycle.restoreSnapshot(savedEngineeringCycle, this);
+    this.damperTest.restoreSnapshot(savedDamper,this); this.fanTest.restoreSnapshot(savedFan,this);
+    Object.assign(this.vfdGuard,savedVfdBlock); // Старые подтверждения/таймеры ПЧ не являются новыми после reboot.
     this.selectedPump = savedSelected;
     this.config.flowControl = savedFlowControl;
     this.hydraulics.requireFullStartup = savedFullStartup;
@@ -206,11 +236,20 @@ export class Simulation {
     return dp < this.config.dpMin && flow < this.config.flowMin ? 'BOTH_LOW' : 'DISAGREEMENT';
   }
   stoppedConfirmed() {
-    const stop = this.outputs.commands['vfd.run']; // Нужна принятая запись STOP, а не только низкая частота.
     return this.state === 'STOPPED' && [1, 2].every(pump => this.outputs.value('pump' + pump + '.run') === false && this.signals.phases(pump)?.every(value => value === false) &&
       ['l1', 'l2', 'l3'].every(phase => this.signals.get('pump' + pump + '.' + phase).lastGoodRevision > this.outputs.commands['pump' + pump + '.run']?.issuedInputRevision)) &&
-      stop?.value === 'STOP' && stop.delivery === 'ACCEPTED' && this.signals.read('vfd.running') === false &&
-      this.signals.get('vfd.running').lastGoodRevision > stop.deliveryInputRevision;
+      this.vfdGuard.stopped(this);
+  }
+  anyEngineeringTest() { return !!(this.engineering.active||this.shutterTest.active||this.damperTest.active||this.fanTest.active); }
+  engineeringIdleReasons() {
+    const reasons=[];
+    if(!this.engineering.enabled||!this.engineering.furnaceOff||this.state!=='STOPPED')reasons.push('Нужен инженерный сеанс: печь выключена, ТО остановлен');
+    if(this.anyEngineeringTest())reasons.push('Сначала завершите текущую проверку');
+    if(!this.hmiAvailable())reasons.push('Нет управляющей HMI');
+    if(Object.values(this.engineering.returnRequired).some(Boolean)||Object.values(this.engineering.breakerOffRequired).some(Boolean)||Object.keys(this.valves.waits).length)reasons.push('Не закончены обязательные ручные действия');
+    for(const name of ['grid.normal','temperature.normal','configuration.ready','vfd.exchange'])if(this.signals.read(name)!==true)reasons.push('Нет допуска: '+name);
+    if(this.signals.read('vfd.fault')!==false||this.signals.read('emergency')!==false||!this.mainEnabled||!this.supervisionEnabled)reasons.push('Нет общих разрешений управления/ПЧ');
+    return reasons;
   }
   startReasons(source = 'HMI') { // source — источник нового Пуска; готовность для HMI и ARANGA различается.
     const reasons = []; // Все выявленные причины запрета, без очереди отложенного Пуска.
@@ -219,13 +258,14 @@ export class Simulation {
     if (!this.hmiAvailable()) reasons.push('Нет обмена с управляющей HMI');
     if (this.engineering.enabled) reasons.push('Инженерный режим');
     if (this.shutterTest.required || this.shutterTest.incomplete) reasons.push('Не выполнен обязательный полный тест ШТ (D-214/D-223)');
+    if (this.fanTest.ordinaryBlocked || this.fanTest.rangeRequired || this.vfdGuard.blocked) reasons.push('Блокировка ПЧ/не выполнен обязательный тест дымососа');
     if (Object.values(this.engineering.returnRequired).some(Boolean)) reasons.push('Не подтверждён возврат нижнего ручного крана');
     if (Object.values(this.engineering.breakerOffRequired).some(Boolean)) reasons.push('Не подтверждено обязательное отключение автомата затвора');
     for (const name of ['grid.normal', 'temperature.normal', 'configuration.ready', 'vfd.exchange']) { // name — обязательная предпосылка первого сценария.
       if (this.signals.read(name) !== true) reasons.push('Не подтверждено: ' + DEFINITIONS[name][0]);
     }
     if (this.signals.read('vfd.fault') !== false || this.signals.read('emergency') !== false) reasons.push('Нет подтверждения отсутствия аварии/нажатия кнопки');
-    if (this.signals.read('cooling.required') !== false) reasons.push('Профиль v0.1 не реализует самостоятельное охлаждение');
+    if (this.signals.read('cooling.required') !== false) reasons.push('Пуск ТО из активного охлаждения пока вне реализованного профиля');
     for (const name of ['pressure.before', 'pressure.after']) { // name — оба обязательных для нового пуска датчика.
       const pressure = this.signals.read(name); // Измеренное давление, бар, либо null.
       if (pressure === null || pressure < 0.8 || pressure > 2.8) reasons.push('Давление не разрешает пуск: ' + name);
@@ -285,7 +325,14 @@ export class Simulation {
         engineering_cycle_repeat: () => typeof value?.key !== 'string' ? ['Выберите этап для полного повторения'] : this.engineeringCycle.next(this, value, value.key),
         engineering_st_restore: () => this.shutterTest.restorePower(this, value),
         engineering_st_release_time: () => this.shutterTest.setReleaseTime(this, value),
-        engineering_stop: () => { if (this.shutterTest.active) { this.shutterTest.cancel(this); return []; } if (!this.engineering.active) return ['Нет активной проверки']; this.engineering.stop(this); return []; },
+        engineering_shod_test: () => this.engineeringCycle.pending ? ['Используйте переход общего цикла'] : this.damperTest.start(this),
+        engineering_shod_k: () => this.damperTest.setK(this,value),
+        engineering_fan_test: () => this.engineeringCycle.pending ? ['Используйте переход общего цикла'] : this.fanTest.start(this),
+        engineering_fan_continue: () => this.fanTest.next(this),
+        engineering_fan_settings: () => this.fanTest.settings(this,value),
+        engineering_cooling_restore: () => this.fanTest.restoreCooling(this,value),
+        engineering_vfd_reset: () => this.vfdGuard.reset(this,value),
+        engineering_stop: () => { if(this.damperTest.active){this.damperTest.cancel(this);return [];} if(this.fanTest.active){this.fanTest.cancel(this);return [];} if (this.shutterTest.active) { this.shutterTest.cancel(this); return []; } if (!this.engineering.active) return ['Нет активной проверки']; this.engineering.stop(this); return []; },
         engineering_return: () => this.engineering.returnBranch(this, value),
         engineering_reset_voltage: () => {
           if (![1, 2].includes(value) || !this.engineering.enabled || this.engineering.active || !this.stoppedConfirmed()) return ['Нужен инженерный режим и подтверждённый останов'];
@@ -346,7 +393,9 @@ export class Simulation {
     } else if (action === 'mode') {
       this.changeMode(value, record);
     } else if (action === 'stop') {
-      if (this.shutterTest.active) { this.shutterTest.cancel(this); record.result = 'ACCEPTED'; }
+      if (this.damperTest.active) { this.damperTest.cancel(this); record.result = 'ACCEPTED'; }
+      else if (this.fanTest.active) { this.fanTest.cancel(this); record.result = 'ACCEPTED'; }
+      else if (this.shutterTest.active) { this.shutterTest.cancel(this); record.result = 'ACCEPTED'; }
       else if (this.engineering.active) { this.engineering.stop(this); record.result = 'ACCEPTED'; }
       else record.result = this.protection.beginStop(this, 'Стоп HMI, обязательный с принятия (D-264)') ? 'ACCEPTED' : 'NO_CHANGE';
     } else if (action === 'continue_stop_after_restart') {
@@ -377,14 +426,19 @@ export class Simulation {
     // Только явно включённый генератор успешных чтений; частоту и команды он не воспроизводит.
     if (this.exchange.aranga && (this.aranga.lastSuccessAt === null || this.clock.now - this.aranga.lastSuccessAt >= 500)) this.aranga.receive(this, 'read');
     if (this.state !== null) {
+      const thermalProfile=this.shutterTest.active||this.damperTest.active||this.fanTest.active||this.state==='STOPPED'&&this.signals.read('cooling.required')===true;
+      if(thermalProfile&&(this.signals.read('emergency')!==false||!this.mainEnabled||!this.supervisionEnabled||this.signals.read('configuration.ready')!==true)){
+        this.gap('Сочетание теплового инженерного профиля с аварийным входом, потерей управления или подтверждения конфигурации ещё не реализовано');
+        return;
+      }
       if (this.shutterTest.active && (this.signals.read('emergency') !== false ||
-          ['pressure.before', 'pressure.after'].some(name => this.signals.read(name) === null) ||
+          (!this.shutterTest.active.coolingContext && ['pressure.before', 'pressure.after'].some(name => this.signals.read(name) === null)) ||
           !this.mainEnabled || !this.supervisionEnabled)) {
         this.gap('Сочетание проверки ШТ с аварийным входом, потерей управления или недостоверными давлениями пока вне реализованного профиля');
         return;
       }
       if (this.signals.read('grid.normal') !== true || this.signals.read('temperature.normal') !== true ||
-          this.signals.read('cooling.required') !== false || this.signals.read('vfd.fault') !== false ||
+          (this.signals.read('cooling.required') === null || this.signals.read('cooling.required') === true && this.state !== 'STOPPED') || this.signals.read('vfd.fault') !== false ||
           this.signals.read('vfd.exchange') !== true) {
         if (this.signals.read('grid.normal') === false) this.pumps.cancelClassificationForGrid(this);
         if (this.engineering.active) {
@@ -439,6 +493,7 @@ export class Simulation {
       hydraulics: { ...this.hydraulics, criterion: this.hydraulics.evaluate(this, this.state === 'STARTING') },
       selectedPump: this.selectedPump, pumpGroup: this.pumps, recovery: this.recovery, valves: this.valves, engineering: this.engineering, pumpSwitchReasons: { 1: this.pumps.reasons(this, 1), 2: this.pumps.reasons(this, 2) },
       shutterTest: this.shutterTest,
+      damperTest: {...this.damperTest,raw:this.signals.read('shod.feedback'),corrected:this.damperTest.position(this)}, fanTest:this.fanTest, cooling:this.cooling, vfdGuard:this.vfdGuard,
       engineeringCycle: { ...this.engineeringCycle, current: this.engineeringCycle.current, pending: this.engineeringCycle.pending },
       bypassClosed: this.main.bypassClosed, bypassOpen: this.protection.bypassOpen,
       lastRequest: this.lastHmiRequest, coverageGap: this.coverageGap, journal: this.journal.slice(-300), groups: INPUT_GROUPS };
@@ -452,6 +507,8 @@ export class Simulation {
         missingBoth: this.pressure.missingBoth, requireBoth: this.pressure.requireBoth, restartBlocked: this.pressure.restartBlocked, stopCauses: this.pressure.stopCauses },
       recoveryAfterRestart: { phase: this.boot.phase, storage: this.boot.storage, needsContinue: this.protection.needsRestartContinue && !this.protection.restartContinued },
       shutterTest: { required: this.shutterTest.required, incomplete: this.shutterTest.incomplete, result: this.shutterTest.result },
+      cooling: { requested:this.signals.read('cooling.required'),phase:this.cooling.phase,blocked:this.fanTest.coolingBlocked||this.vfdGuard.blocked,reasons:this.cooling.reasons },
+      fanTest: { ordinaryBlocked:this.fanTest.ordinaryBlocked,rangeRequired:this.fanTest.rangeRequired,result:this.fanTest.result },
       frequencyReady: this.state === 'RUNNING', frequencyCommand: this.outputs.value('vfd.frequency'),
       frequencySource: this.state === 'RUNNING' ? (this.mode === 'MANUAL' ? 'MANUAL' : this.aranga.source) : this.state === 'STOPPING' ? this.protection.frequencySource : 'FMIN_OR_INACTIVE',
       frequencyTreatment: this.frequency.last, actualFrequency: { value: this.signals.read('vfd.frequency'), quality: actual.quality, fresh: actual.fresh, updatedAt: actual.updatedAt, lastGoodAt: actual.lastGoodAt },

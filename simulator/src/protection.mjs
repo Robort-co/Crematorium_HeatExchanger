@@ -167,6 +167,13 @@ export class Protection {
     const p1 = sim.signals.read('pressure.before'); // Достоверное абсолютное давление до НГ или null.
     const p2 = sim.signals.read('pressure.after'); // Достоверное абсолютное давление после НГ или null.
     sim.pressure.update(sim);
+    sim.cooling.observeCirculation(sim);
+    sim.vfdGuard.step(sim);
+    const stoppedCooling = sim.state==='STOPPED' && sim.signals.read('cooling.required')===true && !sim.shutterTest.active;
+    if(!this.stBlocked && (stoppedCooling && sim.signals.position('st')==='OPEN' || this.elapsed(sim,'stCoolingLostClosed',stoppedCooling && sim.signals.position('st')==='INTERMEDIATE')>=5000)) {
+      this.stBlocked=true; this.fault(sim,'ST_LOST_CLOSED','Утрачено закрытие ШТ вне разрешённого инженерного движения (D-163)');
+      sim.shutterTest.fault(sim,'Утрачено закрытие ШТ при охлаждении (D-163)');
+    }
     const low = sim.pressure.trip; // Включая гистерезис и ожидание обоих каналов после их потери.
     const noPressure = sim.pressure.missingBoth;
     if (sim.signals.read('emergency') === true) this.beginStop(sim, 'Кнопка Авария');
@@ -215,7 +222,12 @@ export class Protection {
     sim.boot.maybeCirculate(sim);
     sim.recovery.step(sim, request, low || noPressure);
     sim.engineering.step(sim, request, low || noPressure); // Только запросы проверки, самостоятельные защиты остаются старше.
+    sim.cooling.step(sim, request);
     sim.shutterTest.step(sim, request);
+    sim.damperTest.step(sim, request);
+    sim.fanTest.step(sim, request);
+    if(sim.fanTest.coolingBlocked)request['shod.voltage']=10;
+    sim.vfdGuard.enforce(request);
     if (sim.state === 'STOPPING') this.stopRequests(sim, request);
     if (low || noPressure) {
       // D-149: низкое давление запрещает насосы, но не открытие затворов.
@@ -248,6 +260,8 @@ export class Protection {
     for (const [name, value] of Object.entries(final)) this.emit(sim, name, value); // name/value — итог после всех вычисленных в цикле ограничений.
     if (this.stBlocked) { this.emit(sim, 'st.direction', 'STOP'); this.emit(sim, 'st.power', false); }
     sim.shutterTest.afterOutputs(sim); // Успех только после фактической выдачи STOP направлениям.
+    sim.fanTest.afterOutputs(sim);
+    if(sim.state==='STOPPED')sim.damperTest.monitorMotion(sim);
     sim.engineeringCycle.observe(sim); // Только запись результата/ожидание; следующий механизм сам не запускается.
     sim.request = request;
     if (sim.state === 'STOPPING' && this.stopStage === 'FINAL_OUTPUTS') {
